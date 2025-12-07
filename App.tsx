@@ -6,118 +6,54 @@ import Expenses from './pages/Expenses';
 import Profits from './pages/Profits';
 import CalendarPage from './pages/CalendarPage';
 import Photos from './pages/Photos';
-import { 
-  Users, 
-  CreditCard, 
-  TrendingUp, 
-  Calendar, 
+import { useFirestore } from './src/hooks/useFirestore';
+import {
+  Users,
+  CreditCard,
+  TrendingUp,
+  Calendar,
   Image as ImageIcon,
-  LayoutDashboard 
+  LayoutDashboard
 } from 'lucide-react';
-
-// Helper to get local date string YYYY-MM-DD
-const getLocalDateString = () => {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-// --- INITIAL DATA ---
-
-const initialEvents: CalendarEvent[] = [
-  { 
-    id: '1', 
-    title: 'Reunión con Cliente: Tech Solutions', 
-    date: getLocalDateString(), 
-    time: '09:00', 
-    type: 'meeting',
-    description: 'Revisión de requisitos del proyecto Alpha.'
-  },
-  { 
-    id: '2', 
-    title: 'Llamada de estrategia', 
-    date: getLocalDateString(), 
-    time: '11:30', 
-    type: 'call',
-    description: 'Hablar sobre campaña de marketing Q4.'
-  },
-  { 
-    id: '3', 
-    title: 'Entrega de Proyecto', 
-    date: '2023-10-28', 
-    time: '14:00', 
-    type: 'deadline',
-    description: 'Fecha límite entrega diseño web.'
-  },
-];
-
-const initialClients: Client[] = [
-  { 
-    id: '1', 
-    name: 'Ana Garcia', 
-    email: 'ana.garcia@example.com', 
-    phone: '+34 600 123 456', 
-    status: 'En Curso', 
-    avatar: 'https://picsum.photos/200',
-    billing: 4500.50,
-    address: 'Gran Vía 24',
-    city: 'Madrid',
-    joinDate: '2023-01-15',
-    notes: 'Cliente preferente.'
-  },
-  { 
-    id: '2', 
-    name: 'Carlos Rodriguez', 
-    email: 'carlos.r@example.com', 
-    phone: '+34 600 987 654', 
-    status: 'Pendiente', 
-    avatar: 'https://picsum.photos/201',
-    billing: 0,
-    address: 'Carrer de Balmes 50',
-    city: 'Barcelona',
-    joinDate: '2023-05-20'
-  },
-  { 
-    id: '3', 
-    name: 'Sofia Martinez', 
-    email: 'sofia.m@example.com', 
-    phone: '+34 611 222 333', 
-    status: 'Finalizado', 
-    avatar: 'https://picsum.photos/202',
-    billing: 3450.00,
-    address: 'Calle Sierpes 12',
-    city: 'Sevilla',
-    joinDate: '2023-08-10'
-  }
-];
-
-const initialExpenses: Expense[] = [
-  { id: '1', description: 'Licencia Software Cloud', amount: 249.00, date: '2023-10-25', category: 'Otros', clientId: '1' },
-  { id: '2', description: 'Material de Obra', amount: 1250.50, date: '2023-10-24', category: 'Materiales', clientId: '1' },
-  { id: '3', description: 'Decoración Hall', amount: 1200.00, date: '2023-10-01', category: 'Decoracion', clientId: '3' }, 
-  { id: '4', description: 'Personal Extra', amount: 450.00, date: '2023-10-20', category: 'Personal', clientId: '1' },
-];
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
-  
-  // Centralized State
-  // Initialize logo from localStorage if available
+
+  // Centralized State - Firestore
   const [logo, setLogo] = useState<string | null>(() => localStorage.getItem('appLogo'));
-  const [events, setEvents] = useState<CalendarEvent[]>(initialEvents);
-  const [clients, setClients] = useState<Client[]>(initialClients);
-  const [expenses, setExpenses] = useState<Expense[]>(initialExpenses);
-  const [photos, setPhotos] = useState<Photo[]>([]);
+
+  // Firestore Hooks
+  const {
+    data: events,
+    add: addEvent,
+    update: updateEvent,
+    remove: deleteEvent
+  } = useFirestore<CalendarEvent>('events');
+
+  const {
+    data: clients,
+    add: addClient,
+    update: updateClient,
+    remove: deleteClient
+  } = useFirestore<Client>('clients');
+
+  const {
+    data: expenses,
+    add: addExpense,
+    update: updateExpense,
+    remove: deleteExpense
+  } = useFirestore<Expense>('expenses');
+
+  const {
+    data: photos,
+    add: addPhoto,
+    remove: deletePhoto
+  } = useFirestore<Photo>('photos');
 
   // Effect to update Favicon and LocalStorage when logo changes
   useEffect(() => {
     if (logo) {
-      // Save to storage
       localStorage.setItem('appLogo', logo);
-      
-      // Update Favicon
       let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
       if (!link) {
         link = document.createElement('link');
@@ -127,7 +63,6 @@ const App: React.FC = () => {
       link.href = logo;
     } else {
       localStorage.removeItem('appLogo');
-      // Optional: Reset to default favicon if needed, or leave blank
     }
   }, [logo]);
 
@@ -142,79 +77,73 @@ const App: React.FC = () => {
     setLogo(newLogo);
   };
 
-  // --- Event Handlers ---
-  const handleAddEvent = (newEvent: CalendarEvent) => {
-    setEvents(prev => [...prev, newEvent]);
-  };
-  const handleUpdateEvent = (updatedEvent: CalendarEvent) => {
-    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
-  };
-  const handleDeleteEvent = (id: string) => {
-    setEvents(prev => prev.filter(e => e.id !== id));
-  };
+  // --- Wrapper Handlers for Type Compatibility ---
+  const handleAddEvent = (event: CalendarEvent) => addEvent(event);
+  const handleUpdateEvent = (event: CalendarEvent) => updateEvent(event.id, event);
+  const handleDeleteEvent = (id: string) => deleteEvent(id);
 
-  // --- Client Handlers ---
-  const handleUpdateClients = (newClients: Client[]) => {
-    setClients(newClients);
-  };
+  const handleAddClient = (client: Client) => addClient(client);
+  const handleUpdateClient = (id: string, updates: Partial<Client>) => updateClient(id, updates);
+  const handleDeleteClient = (id: string) => deleteClient(id);
 
-  // --- Expense Handlers ---
-  const handleUpdateExpenses = (newExpenses: Expense[]) => {
-    setExpenses(newExpenses);
-  };
+  const handleAddExpense = (expense: Expense) => addExpense(expense);
+  const handleUpdateExpense = (id: string, updates: Partial<Expense>) => updateExpense(id, updates);
+  const handleDeleteExpense = (id: string) => deleteExpense(id);
 
-  // --- Photo Handlers ---
-  const handleUpdatePhotos = (newPhotos: Photo[]) => {
-    setPhotos(newPhotos);
-  };
+  const handleAddPhoto = (photo: Photo) => addPhoto(photo);
+  const handleDeletePhoto = (id: string) => deletePhoto(id);
 
   const renderContent = () => {
     switch (currentView) {
-      case 'dashboard': 
+      case 'dashboard':
         return (
-          <Dashboard 
-            onNavigate={handleNavigate} 
-            events={events} 
+          <Dashboard
+            onNavigate={handleNavigate}
+            events={events}
             logo={logo}
             onLogoChange={handleLogoChange}
           />
         );
-      case 'clients': 
+      case 'clients':
         return (
           <div className="max-w-7xl mx-auto p-4 md:p-8">
-            <Clients 
-              onBack={goHome} 
+            <Clients
+              onBack={goHome}
               clients={clients}
-              onUpdateClients={handleUpdateClients}
+              onAddClient={handleAddClient}
+              onUpdateClient={handleUpdateClient}
+              onDeleteClient={handleDeleteClient}
             />
           </div>
         );
-      case 'expenses': 
+      case 'expenses':
         return (
           <div className="max-w-7xl mx-auto p-4 md:p-8">
-            <Expenses 
-              onBack={goHome} 
+            <Expenses
+              onBack={goHome}
               expenses={expenses}
-              onUpdateExpenses={handleUpdateExpenses}
+              onAddExpense={handleAddExpense}
+              onUpdateExpense={handleUpdateExpense}
+              onDeleteExpense={handleDeleteExpense}
               clients={clients}
             />
           </div>
         );
-      case 'profits': 
+      case 'profits':
         return (
-           <div className="max-w-7xl mx-auto p-4 md:p-8">
-            <Profits 
-              onBack={goHome} 
+          <div className="max-w-7xl mx-auto p-4 md:p-8">
+            <Profits
+              onBack={goHome}
               clients={clients}
               expenses={expenses}
             />
           </div>
         );
-      case 'calendar': 
+      case 'calendar':
         return (
           <div className="max-w-7xl mx-auto p-4 md:p-8 h-full">
-            <CalendarPage 
-              onBack={goHome} 
+            <CalendarPage
+              onBack={goHome}
               events={events}
               onAddEvent={handleAddEvent}
               onUpdateEvent={handleUpdateEvent}
@@ -222,25 +151,26 @@ const App: React.FC = () => {
             />
           </div>
         );
-      case 'photos': 
+      case 'photos':
         return (
           <div className="max-w-7xl mx-auto p-4 md:p-8">
-            <Photos 
-              onBack={goHome} 
+            <Photos
+              onBack={goHome}
               clients={clients}
               photos={photos}
-              onUpdatePhotos={handleUpdatePhotos}
+              onAddPhoto={handleAddPhoto}
+              onDeletePhoto={handleDeletePhoto}
             />
           </div>
         );
-      default: 
+      default:
         return (
-            <Dashboard 
-                onNavigate={handleNavigate} 
-                events={events} 
-                logo={logo}
-                onLogoChange={handleLogoChange}
-            />
+          <Dashboard
+            onNavigate={handleNavigate}
+            events={events}
+            logo={logo}
+            onLogoChange={handleLogoChange}
+          />
         );
     }
   };
@@ -248,12 +178,12 @@ const App: React.FC = () => {
   const BottomTab = ({ view, icon: Icon, label }: { view: ViewState, icon: React.ElementType, label: string }) => {
     const isActive = currentView === view;
     return (
-      <button 
+      <button
         onClick={() => setCurrentView(view)}
         className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${isActive ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
       >
-          <Icon className={`w-6 h-6 ${isActive ? 'stroke-2' : 'stroke-1.5'}`} />
-          <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>{label}</span>
+        <Icon className={`w-6 h-6 ${isActive ? 'stroke-2' : 'stroke-1.5'}`} />
+        <span className={`text-[10px] font-semibold uppercase tracking-wide ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}>{label}</span>
       </button>
     );
   };
@@ -267,12 +197,12 @@ const App: React.FC = () => {
       {/* Global Bottom Navigation - Only on Dashboard */}
       {currentView === 'dashboard' && (
         <div className="fixed bottom-0 w-full h-20 bg-white border-t border-slate-200 grid grid-cols-6 items-center px-2 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-[100]">
-            <BottomTab view="dashboard" icon={LayoutDashboard} label="Inicio" />
-            <BottomTab view="clients" icon={Users} label="Clientes" />
-            <BottomTab view="expenses" icon={CreditCard} label="Gastos" />
-            <BottomTab view="profits" icon={TrendingUp} label="Beneficios" />
-            <BottomTab view="photos" icon={ImageIcon} label="Fotos" />
-            <BottomTab view="calendar" icon={Calendar} label="Agenda" />
+          <BottomTab view="dashboard" icon={LayoutDashboard} label="Inicio" />
+          <BottomTab view="clients" icon={Users} label="Clientes" />
+          <BottomTab view="expenses" icon={CreditCard} label="Gastos" />
+          <BottomTab view="profits" icon={TrendingUp} label="Beneficios" />
+          <BottomTab view="photos" icon={ImageIcon} label="Fotos" />
+          <BottomTab view="calendar" icon={Calendar} label="Agenda" />
         </div>
       )}
     </div>
