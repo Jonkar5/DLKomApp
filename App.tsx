@@ -45,6 +45,13 @@ const App: React.FC = () => {
   } = useFirestore<Expense>('expenses');
 
   const {
+    data: profitDistributions,
+    add: addDistribution,
+    update: updateDistribution,
+    remove: deleteDistribution
+  } = useFirestore<import('./types').ProfitDistribution>('profit_distributions');
+
+  const {
     data: photos,
     add: addPhoto,
     remove: deletePhoto
@@ -89,6 +96,10 @@ const App: React.FC = () => {
   const handleAddExpense = (expense: Expense) => addExpense(expense);
   const handleUpdateExpense = (id: string, updates: Partial<Expense>) => updateExpense(id, updates);
   const handleDeleteExpense = (id: string) => deleteExpense(id);
+
+  const handleAddDistribution = (distribution: import('./types').ProfitDistribution) => addDistribution(distribution);
+  const handleUpdateDistribution = (id: string, updates: Partial<import('./types').ProfitDistribution>) => updateDistribution(id, updates);
+  const handleDeleteDistribution = (id: string) => deleteDistribution(id);
 
   const handleAddPhoto = (photo: Photo) => addPhoto(photo);
   const handleDeletePhoto = (id: string) => deletePhoto(id);
@@ -136,6 +147,10 @@ const App: React.FC = () => {
               onBack={goHome}
               clients={clients}
               expenses={expenses}
+              distributions={profitDistributions}
+              onAddDistribution={handleAddDistribution}
+              onUpdateDistribution={handleUpdateDistribution}
+              onDeleteDistribution={handleDeleteDistribution}
             />
           </div>
         );

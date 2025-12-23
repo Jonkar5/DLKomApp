@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Client } from '../types';
+import { Client, PaymentStatus } from '../types';
 import {
   Plus,
   Phone,
@@ -15,7 +15,10 @@ import {
   Navigation,
   Filter,
   User,
-  Printer
+  Printer,
+  CheckCircle,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 // @ts-ignore
 import jsPDF from 'jspdf';
@@ -34,6 +37,7 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
   // Filtros
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('Todos');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('Todos');
 
   // Modales
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -59,7 +63,19 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
   };
 
   // Estado del formulario
-  const [formData, setFormData] = useState<Partial<Client>>({
+  const [formData, setFormData] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+    status: 'Pendiente' | 'En Curso' | 'Finalizado';
+    billing?: number;
+    address: string;
+    city: string;
+    joinDate: string;
+    notes: string;
+    paymentStatus: PaymentStatus;
+    paidAmount?: number;
+  }>({
     name: '',
     email: '',
     phone: '',
@@ -68,31 +84,48 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
     address: '',
     city: '',
     joinDate: getLocalDateString(),
-    notes: ''
+    notes: '',
+    paymentStatus: 'Pendiente',
+    paidAmount: undefined
   });
 
   // --- Logic for Filtering ---
   const filteredClients = clients.filter(client => {
     const matchesClient = selectedClientId === '' || client.id === selectedClientId;
     const matchesStatus = statusFilter === 'Todos' || client.status === statusFilter;
-    return matchesClient && matchesStatus;
+    const matchesPaymentStatus = paymentStatusFilter === 'Todos' || (client.paymentStatus || 'Pendiente') === paymentStatusFilter;
+    return matchesClient && matchesStatus && matchesPaymentStatus;
   });
 
   // --- Handlers ---
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'billing' ? parseFloat(value) : value
-    }));
+    setFormData(prev => {
+      const newData = {
+        ...prev,
+        [name]: name === 'billing' || name === 'paidAmount' ? parseFloat(value) : value
+      };
+
+      // Auto-fill paid amount logic
+      if (name === 'paymentStatus') {
+        if (value === 'Pagado') {
+          newData.paidAmount = newData.billing;
+        } else if (value === 'Pendiente') {
+          newData.paidAmount = 0;
+        }
+      }
+
+      return newData;
+    });
   };
 
   const handleCreateClick = () => {
     setIsEditing(false);
     setEditingId(null);
     setFormData({
-      name: '', email: '', phone: '', status: 'Pendiente', billing: undefined, address: '', city: '', joinDate: getLocalDateString(), notes: ''
+      name: '', email: '', phone: '', status: 'Pendiente', billing: undefined, address: '', city: '', joinDate: getLocalDateString(), notes: '',
+      paymentStatus: 'Pendiente', paidAmount: undefined
     });
     setIsFormOpen(true);
   };
@@ -109,7 +142,9 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
       address: client.address || '',
       city: client.city || '',
       joinDate: client.joinDate || '',
-      notes: client.notes || ''
+      notes: client.notes || '',
+      paymentStatus: client.paymentStatus || 'Pendiente',
+      paidAmount: client.paidAmount
     });
     setSelectedClient(null);
     setIsFormOpen(true);
@@ -136,27 +171,31 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
         name: formData.name,
         email: formData.email,
         phone: formData.phone,
-        status: formData.status as any,
+        status: formData.status,
         billing: formData.billing || 0,
         address: formData.address,
         city: formData.city,
         joinDate: formData.joinDate,
-        notes: formData.notes
+        notes: formData.notes,
+        paymentStatus: formData.paymentStatus,
+        paidAmount: formData.paidAmount || 0
       });
     } else {
       // CREAR
       const newClient: Client = {
-        id: Date.now().toString(), // Will be used if custom ID needed, but usually firestore can generate one
+        id: Date.now().toString(),
         avatar: `https://picsum.photos/200?random=${Date.now()}`,
         name: formData.name || 'Nuevo Cliente',
         email: formData.email || '',
         phone: formData.phone || '',
-        status: formData.status as any,
+        status: formData.status,
         billing: formData.billing || 0,
         address: formData.address,
         city: formData.city,
         joinDate: formData.joinDate,
-        notes: formData.notes
+        notes: formData.notes,
+        paymentStatus: formData.paymentStatus,
+        paidAmount: formData.paidAmount || 0
       };
       onAddClient(newClient);
     }
@@ -184,7 +223,7 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
     doc.text("Informe de Clientes y Estados", 14, 32);
 
     doc.setFontSize(10);
-    let filterInfo = `Filtros: Estado [${statusFilter}]`;
+    let filterInfo = `Filtros: Estado [${statusFilter}], Pago [${paymentStatusFilter}]`;
     if (selectedClientId && filteredClients.length === 1) {
       filterInfo += `, Cliente [${filteredClients[0].name}]`;
     }
@@ -192,10 +231,11 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
 
     autoTable(doc, {
       startY: 50,
-      head: [['Nombre', 'Estado', 'Fecha', 'Localidad', 'Facturación']],
+      head: [['Nombre', 'Estado', 'Pago', 'Fecha', 'Localidad', 'Facturación']],
       body: reportClients.map(c => [
         c.name,
         c.status,
+        c.paymentStatus || 'Pendiente',
         c.joinDate ? new Date(c.joinDate).toLocaleDateString() : '-',
         c.city || '-',
         (c.billing || 0).toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
@@ -242,6 +282,22 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
       case 'En Curso': return 'bg-blue-100 text-blue-700';
       case 'Finalizado': return 'bg-emerald-100 text-emerald-700';
       default: return 'bg-slate-100 text-slate-700';
+    }
+  };
+
+  const getPaymentStatusStyles = (status?: PaymentStatus) => {
+    switch (status) {
+      case 'Pagado': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+      case 'Parcial': return 'bg-amber-50 text-amber-700 border-amber-200';
+      case 'Pendiente': default: return 'bg-rose-50 text-rose-700 border-rose-200';
+    }
+  };
+
+  const getPaymentStatusIcon = (status?: PaymentStatus) => {
+    switch (status) {
+      case 'Pagado': return <CheckCircle className="w-3 h-3" />;
+      case 'Parcial': return <Clock className="w-3 h-3" />;
+      case 'Pendiente': default: return <AlertCircle className="w-3 h-3" />;
     }
   };
 
@@ -293,7 +349,7 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
           </div>
         </div>
 
-        <div className="relative w-1/3 min-w-[140px]">
+        <div className="relative w-1/4 min-w-[120px]">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
             <Filter className="w-5 h-5 text-slate-400" />
           </div>
@@ -302,6 +358,21 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
             <option value="Pendiente">Pendiente</option>
             <option value="En Curso">En Curso</option>
             <option value="Finalizado">Finalizado</option>
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+            <ChevronRight className="w-4 h-4 text-slate-400 rotate-90" />
+          </div>
+        </div>
+
+        <div className="relative w-1/4 min-w-[140px]">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+            <Euro className="w-5 h-5 text-slate-400" />
+          </div>
+          <select value={paymentStatusFilter} onChange={(e) => setPaymentStatusFilter(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 appearance-none cursor-pointer truncate">
+            <option value="Todos">Todos Pagos</option>
+            <option value="Pendiente">Pendiente</option>
+            <option value="Parcial">Parcial</option>
+            <option value="Pagado">Pagado</option>
           </select>
           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
             <ChevronRight className="w-4 h-4 text-slate-400 rotate-90" />
@@ -358,6 +429,10 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
                   <Calendar className="w-3.5 h-3.5" />
                   <span>{client.joinDate ? new Date(client.joinDate).toLocaleDateString() : '-'}</span>
                 </div>
+                <span className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${getPaymentStatusStyles(client.paymentStatus)}`}>
+                  {getPaymentStatusIcon(client.paymentStatus)}
+                  {client.paymentStatus || 'Pendiente'}
+                </span>
               </div>
               <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 shrink-0 ml-1" />
             </div>
@@ -409,6 +484,16 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
                   <div className="flex items-center gap-1 text-indigo-900 font-bold text-xl mt-1">
                     <Euro className="w-6 h-6" />
                     {selectedClient.billing?.toLocaleString('es-ES', { minimumFractionDigits: 2 })}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className={`flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md border ${getPaymentStatusStyles(selectedClient.paymentStatus)}`}>
+                      {selectedClient.paymentStatus || 'Pendiente'}
+                    </span>
+                    {(selectedClient.paymentStatus === 'Parcial' || selectedClient.paymentStatus === 'Pagado') && (
+                      <span className="text-xs font-bold text-slate-500">
+                        {selectedClient.paidAmount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col justify-center">
@@ -483,7 +568,7 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
                   <input required name="name" value={formData.name} onChange={handleInputChange} type="text" className="w-full px-4 py-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all" />
                 </div>
                 <div className="col-span-2 md:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Facturación</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Facturación (Total)</label>
                   <div className="relative">
                     <input name="billing" value={formData.billing || ''} onChange={handleInputChange} type="number" step="0.01" className="w-full pl-4 pr-10 py-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all" />
                     <span className="absolute right-4 top-3.5 text-slate-500 font-bold">€</span>
@@ -504,13 +589,31 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
                   </div>
                 </div>
                 <div className="col-span-2 md:col-span-1">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado del Proyecto</label>
                   <select name="status" value={formData.status} onChange={handleInputChange} className="w-full px-4 py-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all">
                     <option value="Pendiente">Pendiente</option>
                     <option value="En Curso">En Curso</option>
                     <option value="Finalizado">Finalizado</option>
                   </select>
                 </div>
+
+                {/* NEW PAYMENT STATUS FIELDS */}
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado de Pago</label>
+                  <select name="paymentStatus" value={formData.paymentStatus} onChange={handleInputChange} className="w-full px-4 py-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all">
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Parcial">Parcial</option>
+                    <option value="Pagado">Pagado</option>
+                  </select>
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Cantidad Cobrada</label>
+                  <div className="relative">
+                    <input name="paidAmount" value={formData.paidAmount ?? ''} onChange={handleInputChange} type="number" step="0.01" disabled={formData.paymentStatus === 'Pendiente' || formData.paymentStatus === 'Pagado'} className={`w-full pl-4 pr-10 py-3 bg-white rounded-xl border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-none transition-all ${formData.paymentStatus === 'Pendiente' ? 'bg-slate-50' : ''}`} />
+                    <span className="absolute right-4 top-3.5 text-slate-500 font-bold">€</span>
+                  </div>
+                </div>
+
                 <div className="col-span-2 md:col-span-1">
                   <label className="block text-sm font-semibold text-slate-700 mb-2">Dirección</label>
                   <div className="relative">

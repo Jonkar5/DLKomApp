@@ -1,9 +1,13 @@
+export type PaymentStatus = 'Pagado' | 'Pendiente' | 'Parcial';
+
 export interface Client {
   id: string;
   name: string;
   email: string;
   phone: string;
   status: 'Pendiente' | 'En Curso' | 'Finalizado';
+  paymentStatus?: PaymentStatus;
+  paidAmount?: number;
   avatar: string;
   billing?: number;
   joinDate?: string;
@@ -16,6 +20,8 @@ export interface Expense {
   id: string;
   description: string;
   amount: number;
+  paymentStatus?: PaymentStatus;
+  paidAmount?: number;
   date: string;
   category: string;
   clientId?: string; // Optional link to a client
@@ -36,6 +42,26 @@ export interface Photo {
   url: string;
   category: 'actual' | 'final';
   date: string;
+}
+
+
+export interface ProfitDistributionItem {
+  id: string; // Partner Name or unique ID
+  name: string;
+  percentage: number;
+  amount: number;
+  status: 'Pendiente' | 'Pagado' | 'Parcial';
+  paidDate?: string;
+  notes?: string;
+}
+
+export interface ProfitDistribution {
+  id: string;
+  date: string;
+  period: string; // e.g., "Enero 2024" or "Q1 2024"
+  totalProfit: number;
+  items: ProfitDistributionItem[];
+  notes?: string;
 }
 
 export type ViewState = 'dashboard' | 'clients' | 'expenses' | 'profits' | 'calendar' | 'photos';

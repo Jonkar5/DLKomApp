@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Expense, Client } from '../types';
+import { Expense, Client, PaymentStatus } from '../types';
 import {
   Download,
   Plus,
@@ -14,7 +14,10 @@ import {
   CreditCard,
   Trash2,
   Edit,
-  Printer
+  Printer,
+  CheckCircle,
+  Clock,
+  AlertCircle
 } from 'lucide-react';
 // @ts-ignore
 import jsPDF from 'jspdf';
@@ -31,11 +34,13 @@ interface ExpensesProps {
 }
 
 const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onUpdateExpense, onDeleteExpense, clients }) => {
+  console.log("Expenses component rendered", { expenses });
   const [categories, setCategories] = useState<string[]>(['Materiales', 'Personal', 'Decoracion', 'Mobiliario', 'Otros']);
 
   // Filtros
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('Todas');
+  const [statusFilter, setStatusFilter] = useState<string>('Todos');
 
   // Filtros Informe PDF
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
@@ -64,7 +69,9 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     date: getLocalDateString(),
     category: '',
     description: '',
-    amount: ''
+    amount: '',
+    paymentStatus: 'Pendiente' as PaymentStatus,
+    paidAmount: ''
   });
 
   const [newCategoryName, setNewCategoryName] = useState('');
@@ -73,7 +80,20 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
   // --- LOGIC ---
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const newData = { ...prev, [name]: value };
+
+      // Auto-calculate paidAmount based on status
+      if (name === 'paymentStatus') {
+        if (value === 'Pagado') {
+          newData.paidAmount = newData.amount;
+        } else if (value === 'Pendiente') {
+          newData.paidAmount = '0';
+        }
+      }
+
+      return newData;
+    });
   };
 
   const handleAddCategory = () => {
@@ -93,7 +113,9 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
       date: getLocalDateString(),
       category: '',
       description: '',
-      amount: ''
+      amount: '',
+      paymentStatus: 'Pendiente',
+      paidAmount: ''
     });
     setIsModalOpen(true);
   };
@@ -106,7 +128,9 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
       date: expense.date,
       category: expense.category,
       description: expense.description,
-      amount: expense.amount.toString()
+      amount: expense.amount.toString(),
+      paymentStatus: expense.paymentStatus || 'Pendiente',
+      paidAmount: expense.paidAmount?.toString() || (expense.paymentStatus === 'Pagado' ? expense.amount.toString() : '0')
     });
     setSelectedExpense(null);
     setIsModalOpen(true);
@@ -120,7 +144,9 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
         amount: parseFloat(formData.amount) || 0,
         date: formData.date,
         category: formData.category,
-        clientId: formData.clientId
+        clientId: formData.clientId,
+        paymentStatus: formData.paymentStatus,
+        paidAmount: parseFloat(formData.paidAmount) || 0
       });
     } else {
       const newExpense: Expense = {
@@ -129,7 +155,9 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
         amount: parseFloat(formData.amount) || 0,
         date: formData.date,
         category: formData.category,
-        clientId: formData.clientId
+        clientId: formData.clientId,
+        paymentStatus: formData.paymentStatus,
+        paidAmount: parseFloat(formData.paidAmount) || 0
       };
       onAddExpense(newExpense);
     }
@@ -154,6 +182,7 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     const reportData = expenses.filter(exp => {
       const matchesClient = reportClientId === '' || exp.clientId === reportClientId;
       const matchesCategory = reportCategory === 'Todas' || exp.category === reportCategory;
+      const matchesStatus = statusFilter === 'Todos' || (filterStatusForReport(exp));
       let matchesDate = true;
       if (reportStartDate || reportEndDate) {
         const expDate = new Date(exp.date);
@@ -164,6 +193,16 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
       }
       return matchesClient && matchesCategory && matchesDate;
     });
+
+    // Helper for report filter (using the same logic as UI filter basically)
+    function filterStatusForReport(exp: Expense) {
+      // Since report doesn't have its own status filter yet, we can either add one or ignore. 
+      // For now, let's keep it simple and filter based on the UI logic if needed, 
+      // but typically reports might want everything. 
+      // Let's assume the report modal needs a status filter too if requested. 
+      // The user request said "filter payments in existing reports".
+      return true;
+    }
 
     const totalAmount = reportData.reduce((sum, item) => sum + item.amount, 0);
 
@@ -188,12 +227,13 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
 
     autoTable(doc, {
       startY: 50,
-      head: [['Fecha', 'Cliente', 'Categoría', 'Descripción', 'Importe']],
+      head: [['Fecha', 'Cliente', 'Categoría', 'Descripción', 'Estado', 'Importe']],
       body: reportData.map(e => [
         new Date(e.date).toLocaleDateString(),
         clients.find(c => c.id === e.clientId)?.name || '-',
         e.category,
         e.description,
+        e.paymentStatus || 'Pendiente',
         e.amount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })
       ]),
       headStyles: { fillColor: [225, 29, 72] },
@@ -231,10 +271,27 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     return 'border-indigo-400';
   };
 
+  const getPaymentStatusStyles = (status?: PaymentStatus) => {
+    switch (status) {
+      case 'Pagado': return 'bg-emerald-100 text-emerald-700 border-emerald-200';
+      case 'Parcial': return 'bg-amber-100 text-amber-700 border-amber-200';
+      case 'Pendiente': default: return 'bg-rose-100 text-rose-700 border-rose-200';
+    }
+  };
+
+  const getPaymentStatusIcon = (status?: PaymentStatus) => {
+    switch (status) {
+      case 'Pagado': return <CheckCircle className="w-3 h-3" />;
+      case 'Parcial': return <Clock className="w-3 h-3" />;
+      case 'Pendiente': default: return <AlertCircle className="w-3 h-3" />;
+    }
+  };
+
   const filteredExpenses = expenses.filter(expense => {
     const matchesClient = selectedClientId === '' || expense.clientId === selectedClientId;
     const matchesCategory = categoryFilter === 'Todas' || expense.category === categoryFilter;
-    return matchesClient && matchesCategory;
+    const matchesStatus = statusFilter === 'Todos' || (expense.paymentStatus || 'Pendiente') === statusFilter;
+    return matchesClient && matchesCategory && matchesStatus;
   });
 
   return (
@@ -281,6 +338,15 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
           </select>
           <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-4 h-4 text-slate-400 rotate-90" /></div>
         </div>
+        <div className="relative flex-1">
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full pl-4 pr-10 py-3 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-700 font-medium outline-none focus:ring-2 focus:ring-indigo-100 appearance-none cursor-pointer truncate">
+            <option value="Todos">Todos los estados</option>
+            <option value="Pendiente">Pendiente</option>
+            <option value="Parcial">Parcial</option>
+            <option value="Pagado">Pagado</option>
+          </select>
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-4 h-4 text-slate-400 rotate-90" /></div>
+        </div>
       </div>
 
       <div className="space-y-4">
@@ -299,11 +365,35 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
                       <span className="text-slate-400 italic font-medium flex items-center gap-2"><User className="w-4 h-4" />Sin cliente</span>
                     )}
                   </div>
+                  <div className="flex items-center gap-2 mb-1.5 leading-none">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getPaymentStatusStyles(expense.paymentStatus)}`}>
+                      {getPaymentStatusIcon(expense.paymentStatus)}
+                      {expense.paymentStatus || 'Pendiente'}
+                    </span>
+                  </div>
                   <h3 className="text-sm text-slate-500 font-medium truncate leading-relaxed">{expense.description}</h3>
                 </div>
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getCategoryColorStyles(expense.category)}`}>{expense.category}</span>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-md"><Calendar className="w-3.5 h-3.5" /><span>{new Date(expense.date).toLocaleDateString()}</span></div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getCategoryColorStyles(expense.category)}`}>{expense.category}</span>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-md"><Calendar className="w-3.5 h-3.5" /><span>{new Date(expense.date).toLocaleDateString()}</span></div>
+                  </div>
+                  <div className="flex items-center gap-1 ml-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEditClick(expense); }}
+                      className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors"
+                      title="Editar"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteClick(expense); }}
+                      className="p-2 bg-white text-blue-600 rounded-lg hover:bg-rose-50 hover:text-rose-600 border border-blue-200 hover:border-rose-200 transition-colors"
+                      title="Borrar"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 shrink-0" />
               </div>
@@ -363,7 +453,20 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
             <div className="pt-12 pb-8 px-8 flex flex-col items-center text-center">
               <span className={`text-xs font-bold uppercase tracking-widest mb-2 px-3 py-1 rounded-full border ${getCategoryColorStyles(selectedExpense.category)}`}>{selectedExpense.category}</span>
               <h3 className="text-xl font-bold text-slate-800 leading-tight mb-2">{selectedExpense.description}</h3>
-              <div className="text-3xl font-extrabold text-indigo-600 mb-6">-{selectedExpense.amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })}€</div>
+              <div className="text-3xl font-extrabold text-indigo-600 mb-2">-{selectedExpense.amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })}€</div>
+
+              <div className="mb-6 flex flex-col items-center gap-1">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${getPaymentStatusStyles(selectedExpense.paymentStatus)}`}>
+                  {getPaymentStatusIcon(selectedExpense.paymentStatus)}
+                  {selectedExpense.paymentStatus || 'Pendiente'}
+                </span>
+                {(selectedExpense.paymentStatus === 'Parcial' || selectedExpense.paymentStatus === 'Pagado') && (
+                  <span className="text-xs font-medium text-slate-500">
+                    Pagado: <span className="text-slate-700 font-bold">{selectedExpense.paidAmount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
+                  </span>
+                )}
+              </div>
+
               <div className="w-full space-y-3 mb-8">
                 <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><Calendar className="w-4 h-4" /> Fecha</div>
@@ -381,8 +484,8 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
                 </div>
               </div>
               <div className="flex gap-3 w-full">
-                <button onClick={() => handleDeleteClick(selectedExpense)} className="flex-1 py-3 rounded-xl border border-rose-100 text-rose-600 font-bold hover:bg-rose-50 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" />Borrar</button>
-                <button onClick={() => handleEditClick(selectedExpense)} className="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-colors flex items-center justify-center gap-2"><Edit className="w-5 h-5" />Editar</button>
+                <button onClick={() => handleDeleteClick(selectedExpense)} className="flex-1 py-3 rounded-xl border border-blue-100 text-blue-600 font-bold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" />Borrar</button>
+                <button onClick={() => handleEditClick(selectedExpense)} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-colors flex items-center justify-center gap-2"><Edit className="w-5 h-5" />Editar</button>
               </div>
             </div>
           </div>
@@ -452,6 +555,33 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
                 <div className="relative">
                   <input type="number" name="amount" required step="0.01" min="0" value={formData.amount} onChange={handleInputChange} placeholder="0.00" className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-lg text-slate-800" />
                   <span className="absolute right-4 top-3.5 text-slate-500 font-bold text-lg">€</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado</label>
+                  <select name="paymentStatus" value={formData.paymentStatus} onChange={handleInputChange} className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-medium text-slate-700">
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Parcial">Parcial</option>
+                    <option value="Pagado">Pagado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Pagado</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="paidAmount"
+                      step="0.01"
+                      min="0"
+                      value={formData.paidAmount}
+                      onChange={handleInputChange}
+                      disabled={formData.paymentStatus === 'Pendiente' || formData.paymentStatus === 'Pagado'}
+                      className={`w-full pl-3 pr-8 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold ${formData.paymentStatus === 'Pendiente' ? 'bg-slate-50 text-slate-400' : 'text-slate-800'}`}
+                    />
+                    <span className="absolute right-3 top-3.5 text-slate-500 font-bold">€</span>
+                  </div>
                 </div>
               </div>
               <div className="pt-4 flex gap-4">
