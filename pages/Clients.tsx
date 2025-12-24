@@ -90,12 +90,19 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
   });
 
   // --- Logic for Filtering ---
-  const filteredClients = clients.filter(client => {
-    const matchesClient = selectedClientId === '' || client.id === selectedClientId;
-    const matchesStatus = statusFilter === 'Todos' || client.status === statusFilter;
-    const matchesPaymentStatus = paymentStatusFilter === 'Todos' || (client.paymentStatus || 'Pendiente') === paymentStatusFilter;
-    return matchesClient && matchesStatus && matchesPaymentStatus;
-  });
+  const filteredClients = clients
+    .filter(client => {
+      const matchesClient = selectedClientId === '' || client.id === selectedClientId;
+      const matchesStatus = statusFilter === 'Todos' || client.status === statusFilter;
+      const matchesPaymentStatus = paymentStatusFilter === 'Todos' || (client.paymentStatus || 'Pendiente') === paymentStatusFilter;
+      return matchesClient && matchesStatus && matchesPaymentStatus;
+    })
+    .sort((a, b) => {
+      const dateA = a.joinDate || '';
+      const dateB = b.joinDate || '';
+      if (dateB !== dateA) return dateB.localeCompare(dateA);
+      return b.id.localeCompare(a.id);
+    });
 
   // --- Handlers ---
 
