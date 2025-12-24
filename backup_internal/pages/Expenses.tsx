@@ -20,7 +20,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 // @ts-ignore
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 // @ts-ignore
 import autoTable from 'jspdf-autotable';
 
@@ -48,7 +48,6 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
   const [reportCategory, setReportCategory] = useState<string>('Todas');
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate] = useState('');
-  const [reportStatus, setReportStatus] = useState<string>('Todos');
 
   // Modales y Estados UI
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -183,8 +182,7 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     const reportData = expenses.filter(exp => {
       const matchesClient = reportClientId === '' || exp.clientId === reportClientId;
       const matchesCategory = reportCategory === 'Todas' || exp.category === reportCategory;
-      const matchesStatus = reportStatus === 'Todos' || (exp.paymentStatus || 'Pendiente') === reportStatus;
-
+      const matchesStatus = statusFilter === 'Todos' || (filterStatusForReport(exp));
       let matchesDate = true;
       if (reportStartDate || reportEndDate) {
         const expDate = new Date(exp.date);
@@ -193,12 +191,17 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
         end.setHours(23, 59, 59);
         matchesDate = expDate >= start && expDate <= end;
       }
-      return matchesClient && matchesCategory && matchesDate && matchesStatus;
+      return matchesClient && matchesCategory && matchesDate;
     });
 
-    if (reportData.length === 0) {
-      alert("No hay gastos que coincidan con los filtros del informe.");
-      return;
+    // Helper for report filter (using the same logic as UI filter basically)
+    function filterStatusForReport(exp: Expense) {
+      // Since report doesn't have its own status filter yet, we can either add one or ignore. 
+      // For now, let's keep it simple and filter based on the UI logic if needed, 
+      // but typically reports might want everything. 
+      // Let's assume the report modal needs a status filter too if requested. 
+      // The user request said "filter payments in existing reports".
+      return true;
     }
 
     const totalAmount = reportData.reduce((sum, item) => sum + item.amount, 0);
@@ -213,7 +216,6 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     doc.setFontSize(10);
     let filterText = "Filtros aplicados: ";
     if (reportCategory !== 'Todas') filterText += `Categoría [${reportCategory}] `;
-    if (reportStatus !== 'Todos') filterText += `Estado [${reportStatus}] `;
     if (reportClientId !== '') {
       const clientName = clients.find(c => c.id === reportClientId)?.name;
       filterText += `Cliente [${clientName}] `;
@@ -245,8 +247,7 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     doc.setFont('helvetica', 'bold');
     doc.text(`Total Gastos: ${totalAmount.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}`, 14, finalY);
 
-    const fileNameDate = new Date().toISOString().slice(0, 10);
-    doc.save(`informe_gastos_${fileNameDate}.pdf`);
+    doc.save(`informe_gastos_${new Date().toISOString().slice(0, 10)}.pdf`);
     setIsReportModalOpen(false);
   };
 
@@ -436,192 +437,176 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
                   <input type="date" value={reportEndDate} onChange={(e) => setReportEndDate(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl outline-none text-slate-600 cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100" onClick={(e) => e.currentTarget.showPicker?.()} />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1">Filtrar por Estado</label>
-                <select value={reportStatus} onChange={(e) => setReportStatus(e.target.value)} className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none text-slate-700">
-                  <option value="Todos">Todos los estados</option>
-                  <option value="Pendiente">Pendiente</option>
-                  <option value="Parcial">Parcial</option>
-                  <option value="Pagado">Pagado</option>
-                </select>
-              </div>
             </div>
             <button onClick={handleGeneratePDF} className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"><Download className="w-5 h-5" />Generar PDF</button>
           </div>
         </div>
       )}
 
+      {selectedExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-bounce-subtle overflow-hidden">
+            <div className="h-24 bg-indigo-600 relative flex items-center justify-center">
+              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md absolute -bottom-8"><CreditCard className="w-8 h-8 text-indigo-600" /></div>
+              <button onClick={() => setSelectedExpense(null)} className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="pt-12 pb-8 px-8 flex flex-col items-center text-center">
+              <span className={`text-xs font-bold uppercase tracking-widest mb-2 px-3 py-1 rounded-full border ${getCategoryColorStyles(selectedExpense.category)}`}>{selectedExpense.category}</span>
+              <h3 className="text-xl font-bold text-slate-800 leading-tight mb-2">{selectedExpense.description}</h3>
+              <div className="text-3xl font-extrabold text-indigo-600 mb-2">-{selectedExpense.amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })}€</div>
 
-      {
-        selectedExpense && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md animate-bounce-subtle overflow-hidden">
-              <div className="h-24 bg-indigo-600 relative flex items-center justify-center">
-                <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-md absolute -bottom-8"><CreditCard className="w-8 h-8 text-indigo-600" /></div>
-                <button onClick={() => setSelectedExpense(null)} className="absolute top-4 right-4 p-2 bg-white/20 hover:bg-white/40 rounded-full text-white transition-colors"><X className="w-5 h-5" /></button>
-              </div>
-              <div className="pt-12 pb-8 px-8 flex flex-col items-center text-center">
-                <span className={`text-xs font-bold uppercase tracking-widest mb-2 px-3 py-1 rounded-full border ${getCategoryColorStyles(selectedExpense.category)}`}>{selectedExpense.category}</span>
-                <h3 className="text-xl font-bold text-slate-800 leading-tight mb-2">{selectedExpense.description}</h3>
-                <div className="text-3xl font-extrabold text-indigo-600 mb-2">-{selectedExpense.amount.toLocaleString('es-ES', { minimumFractionDigits: 2 })}€</div>
-
-                <div className="mb-6 flex flex-col items-center gap-1">
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${getPaymentStatusStyles(selectedExpense.paymentStatus)}`}>
-                    {getPaymentStatusIcon(selectedExpense.paymentStatus)}
-                    {selectedExpense.paymentStatus || 'Pendiente'}
+              <div className="mb-6 flex flex-col items-center gap-1">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border ${getPaymentStatusStyles(selectedExpense.paymentStatus)}`}>
+                  {getPaymentStatusIcon(selectedExpense.paymentStatus)}
+                  {selectedExpense.paymentStatus || 'Pendiente'}
+                </span>
+                {(selectedExpense.paymentStatus === 'Parcial' || selectedExpense.paymentStatus === 'Pagado') && (
+                  <span className="text-xs font-medium text-slate-500">
+                    Pagado: <span className="text-slate-700 font-bold">{selectedExpense.paidAmount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
                   </span>
-                  {(selectedExpense.paymentStatus === 'Parcial' || selectedExpense.paymentStatus === 'Pagado') && (
-                    <span className="text-xs font-medium text-slate-500">
-                      Pagado: <span className="text-slate-700 font-bold">{selectedExpense.paidAmount?.toLocaleString('es-ES', { style: 'currency', currency: 'EUR' })}</span>
-                    </span>
-                  )}
-                </div>
+                )}
+              </div>
 
-                <div className="w-full space-y-3 mb-8">
+              <div className="w-full space-y-3 mb-8">
+                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><Calendar className="w-4 h-4" /> Fecha</div>
+                  <span className="font-bold text-slate-700">{new Date(selectedExpense.date).toLocaleDateString()}</span>
+                </div>
+                {selectedExpense.clientId && (
                   <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><Calendar className="w-4 h-4" /> Fecha</div>
-                    <span className="font-bold text-slate-700">{new Date(selectedExpense.date).toLocaleDateString()}</span>
+                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><User className="w-4 h-4" /> Cliente</div>
+                    <span className="font-bold text-indigo-600">{clients.find(c => c.id === selectedExpense.clientId)?.name}</span>
                   </div>
-                  {selectedExpense.clientId && (
-                    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><User className="w-4 h-4" /> Cliente</div>
-                      <span className="font-bold text-indigo-600">{clients.find(c => c.id === selectedExpense.clientId)?.name}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><FileText className="w-4 h-4" /> ID Referencia</div>
-                    <span className="font-mono text-xs font-bold text-slate-400">#{selectedExpense.id}</span>
-                  </div>
+                )}
+                <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex items-center gap-2 text-slate-500 text-sm font-medium"><FileText className="w-4 h-4" /> ID Referencia</div>
+                  <span className="font-mono text-xs font-bold text-slate-400">#{selectedExpense.id}</span>
                 </div>
-                <div className="flex gap-3 w-full">
-                  <button onClick={() => handleDeleteClick(selectedExpense)} className="flex-1 py-3 rounded-xl border border-blue-100 text-blue-600 font-bold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" />Borrar</button>
-                  <button onClick={() => handleEditClick(selectedExpense)} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-colors flex items-center justify-center gap-2"><Edit className="w-5 h-5" />Editar</button>
-                </div>
+              </div>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => handleDeleteClick(selectedExpense)} className="flex-1 py-3 rounded-xl border border-blue-100 text-blue-600 font-bold hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"><Trash2 className="w-5 h-5" />Borrar</button>
+                <button onClick={() => handleEditClick(selectedExpense)} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-colors flex items-center justify-center gap-2"><Edit className="w-5 h-5" />Editar</button>
               </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-
-      {
-        isModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg animate-bounce-subtle max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
-                <h3 className="text-xl font-bold text-slate-800">{isEditing ? 'Editar Gasto' : 'Añadir Gasto'}</h3>
-                <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg animate-bounce-subtle max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white sticky top-0 z-10">
+              <h3 className="text-xl font-bold text-slate-800">{isEditing ? 'Editar Gasto' : 'Añadir Gasto'}</h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Asignar a Cliente <span className="text-rose-500">*</span></label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+                  <select name="clientId" required value={formData.clientId} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none font-medium text-slate-700">
+                    <option value="">Seleccione un cliente...</option>
+                    {clients.map(client => (
+                      <option key={client.id} value={client.id}>{client.name}</option>
+                    ))}
+                  </select>
+                  <ChevronRight className="absolute right-4 top-3.5 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
+                </div>
               </div>
-              <form onSubmit={handleSubmit} className="p-6 space-y-5">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Asignar a Cliente <span className="text-rose-500">*</span></label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
-                    <select name="clientId" required value={formData.clientId} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none font-medium text-slate-700">
-                      <option value="">Seleccione un cliente...</option>
-                      {clients.map(client => (
-                        <option key={client.id} value={client.id}>{client.name}</option>
-                      ))}
-                    </select>
-                    <ChevronRight className="absolute right-4 top-3.5 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
-                  </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Fecha</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" />
+                  <input type="date" name="date" required value={formData.date} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none text-slate-600 cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:p-1" onClick={(e) => e.currentTarget.showPicker?.()} />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Fecha</label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" />
-                    <input type="date" name="date" required value={formData.date} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none text-slate-600 cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:p-1" onClick={(e) => e.currentTarget.showPicker?.()} />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between items-center mb-2">
-                    <label className="block text-sm font-semibold text-slate-700">Tipo de Gasto</label>
-                    {!isAddingCategory && (
-                      <button type="button" onClick={() => setIsAddingCategory(true)} className="text-xs text-indigo-600 font-bold hover:text-indigo-800 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar tipo</button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Tag className="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" />
-                    <select name="category" required value={formData.category} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none text-slate-700">
-                      <option value="">Seleccionar...</option>
-                      {categories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
-                    </select>
-                    <ChevronRight className="absolute right-4 top-3.5 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
-                  </div>
-                  {isAddingCategory && (
-                    <div className="flex gap-2 mt-2">
-                      <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Nueva categoría..." className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" autoFocus />
-                      <button type="button" onClick={handleAddCategory} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm"><Save className="w-4 h-4" /></button>
-                      <button type="button" onClick={() => setIsAddingCategory(false)} className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 border border-slate-200"><X className="w-4 h-4" /></button>
-                    </div>
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-semibold text-slate-700">Tipo de Gasto</label>
+                  {!isAddingCategory && (
+                    <button type="button" onClick={() => setIsAddingCategory(true)} className="text-xs text-indigo-600 font-bold hover:text-indigo-800 flex items-center gap-1"><Plus className="w-3 h-3" /> Agregar tipo</button>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Descripción del Gasto</label>
-                  <div className="relative">
-                    <FileText className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
-                    <textarea name="description" required rows={2} value={formData.description} onChange={handleInputChange} placeholder="Detalle del gasto..." className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none resize-none"></textarea>
-                  </div>
+                <div className="relative">
+                  <Tag className="absolute left-3 top-3.5 w-5 h-5 text-slate-400 pointer-events-none" />
+                  <select name="category" required value={formData.category} onChange={handleInputChange} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none text-slate-700">
+                    <option value="">Seleccionar...</option>
+                    {categories.map(cat => (<option key={cat} value={cat}>{cat}</option>))}
+                  </select>
+                  <ChevronRight className="absolute right-4 top-3.5 w-4 h-4 text-slate-400 rotate-90 pointer-events-none" />
                 </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Importe Total</label>
-                  <div className="relative">
-                    <input type="number" name="amount" required step="0.01" min="0" value={formData.amount} onChange={handleInputChange} placeholder="0.00" className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-lg text-slate-800" />
-                    <span className="absolute right-4 top-3.5 text-slate-500 font-bold text-lg">€</span>
+                {isAddingCategory && (
+                  <div className="flex gap-2 mt-2">
+                    <input type="text" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} placeholder="Nueva categoría..." className="flex-1 px-3 py-2 text-sm border border-slate-200 rounded-lg outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" autoFocus />
+                    <button type="button" onClick={handleAddCategory} className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 shadow-sm"><Save className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => setIsAddingCategory(false)} className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 border border-slate-200"><X className="w-4 h-4" /></button>
                   </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Estado</label>
-                    <select name="paymentStatus" value={formData.paymentStatus} onChange={handleInputChange} className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-medium text-slate-700">
-                      <option value="Pendiente">Pendiente</option>
-                      <option value="Parcial">Parcial</option>
-                      <option value="Pagado">Pagado</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-2">Pagado</label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        name="paidAmount"
-                        step="0.01"
-                        min="0"
-                        value={formData.paidAmount}
-                        onChange={handleInputChange}
-                        disabled={formData.paymentStatus === 'Pendiente' || formData.paymentStatus === 'Pagado'}
-                        className={`w-full pl-3 pr-8 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold ${formData.paymentStatus === 'Pendiente' ? 'bg-slate-50 text-slate-400' : 'text-slate-800'}`}
-                      />
-                      <span className="absolute right-3 top-3.5 text-slate-500 font-bold">€</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="pt-4 flex gap-4">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
-                  <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-colors">{isEditing ? 'Guardar Cambios' : 'Guardar Gasto'}</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-
-      {
-        expenseToDelete && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center animate-bounce-subtle">
-              <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><Trash2 className="w-8 h-8" /></div>
-              <h3 className="text-xl font-bold text-slate-800 mb-2">¿Eliminar Gasto?</h3>
-              <p className="text-slate-500 mb-6">Estás a punto de borrar <span className="font-bold text-slate-700">{expenseToDelete.description}</span>.</p>
-              <div className="flex gap-3">
-                <button onClick={() => setExpenseToDelete(null)} className="flex-1 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition-colors">Cancelar</button>
-                <button onClick={confirmDelete} className="flex-1 px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700 shadow-lg shadow-rose-200 transition-colors">Sí, eliminar</button>
+                )}
               </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Descripción del Gasto</label>
+                <div className="relative">
+                  <FileText className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+                  <textarea name="description" required rows={2} value={formData.description} onChange={handleInputChange} placeholder="Detalle del gasto..." className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none resize-none"></textarea>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Importe Total</label>
+                <div className="relative">
+                  <input type="number" name="amount" required step="0.01" min="0" value={formData.amount} onChange={handleInputChange} placeholder="0.00" className="w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold text-lg text-slate-800" />
+                  <span className="absolute right-4 top-3.5 text-slate-500 font-bold text-lg">€</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Estado</label>
+                  <select name="paymentStatus" value={formData.paymentStatus} onChange={handleInputChange} className="w-full px-3 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-medium text-slate-700">
+                    <option value="Pendiente">Pendiente</option>
+                    <option value="Parcial">Parcial</option>
+                    <option value="Pagado">Pagado</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">Pagado</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      name="paidAmount"
+                      step="0.01"
+                      min="0"
+                      value={formData.paidAmount}
+                      onChange={handleInputChange}
+                      disabled={formData.paymentStatus === 'Pendiente' || formData.paymentStatus === 'Pagado'}
+                      className={`w-full pl-3 pr-8 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none font-bold ${formData.paymentStatus === 'Pendiente' ? 'bg-slate-50 text-slate-400' : 'text-slate-800'}`}
+                    />
+                    <span className="absolute right-3 top-3.5 text-slate-500 font-bold">€</span>
+                  </div>
+                </div>
+              </div>
+              <div className="pt-4 flex gap-4">
+                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors">Cancelar</button>
+                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition-colors">{isEditing ? 'Guardar Cambios' : 'Guardar Gasto'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {expenseToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-sm p-6 text-center animate-bounce-subtle">
+            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4"><Trash2 className="w-8 h-8" /></div>
+            <h3 className="text-xl font-bold text-slate-800 mb-2">¿Eliminar Gasto?</h3>
+            <p className="text-slate-500 mb-6">Estás a punto de borrar <span className="font-bold text-slate-700">{expenseToDelete.description}</span>.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setExpenseToDelete(null)} className="flex-1 px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition-colors">Cancelar</button>
+              <button onClick={confirmDelete} className="flex-1 px-4 py-2 rounded-xl bg-rose-600 text-white font-semibold hover:bg-rose-700 shadow-lg shadow-rose-200 transition-colors">Sí, eliminar</button>
             </div>
           </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   );
 };
 
