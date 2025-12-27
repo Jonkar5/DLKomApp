@@ -286,17 +286,12 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     }
   };
 
-  const filteredExpenses = expenses
-    .filter(expense => {
-      const matchesClient = selectedClientId === '' || expense.clientId === selectedClientId;
-      const matchesCategory = categoryFilter === 'Todas' || expense.category === categoryFilter;
-      const matchesStatus = statusFilter === 'Todos' || (expense.paymentStatus || 'Pendiente') === statusFilter;
-      return matchesClient && matchesCategory && matchesStatus;
-    })
-    .sort((a, b) => {
-      if (b.date !== a.date) return b.date.localeCompare(a.date);
-      return b.id.localeCompare(a.id);
-    });
+  const filteredExpenses = expenses.filter(expense => {
+    const matchesClient = selectedClientId === '' || expense.clientId === selectedClientId;
+    const matchesCategory = categoryFilter === 'Todas' || expense.category === categoryFilter;
+    const matchesStatus = statusFilter === 'Todos' || (expense.paymentStatus || 'Pendiente') === statusFilter;
+    return matchesClient && matchesCategory && matchesStatus;
+  });
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 relative">

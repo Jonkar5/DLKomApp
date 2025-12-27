@@ -6,6 +6,7 @@ import Expenses from './pages/Expenses';
 import Profits from './pages/Profits';
 import CalendarPage from './pages/CalendarPage';
 import Photos from './pages/Photos';
+import NotificationManager from './components/NotificationManager';
 import { useFirestore } from './src/hooks/useFirestore';
 import {
   Users,
@@ -205,6 +206,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
+      <NotificationManager events={events} />
       <main className={`w-full flex-1 ${currentView === 'dashboard' ? 'pb-20' : 'pb-4'}`}>
         {renderContent()}
       </main>

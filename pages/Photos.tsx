@@ -15,48 +15,7 @@ const Photos: React.FC<PhotosProps> = ({ onBack, clients, photos, onAddPhoto, on
     const [activeCategory, setActiveCategory] = useState<'actual' | 'final'>('actual');
     const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-    const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const compressImage = (file: File): Promise<string> => {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = (event) => {
-                const img = new Image();
-                img.src = event.target?.result as string;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-
-                    const MAX_SIZE = 1200;
-                    if (width > height) {
-                        if (width > MAX_SIZE) {
-                            height *= MAX_SIZE / width;
-                            width = MAX_SIZE;
-                        }
-                    } else {
-                        if (height > MAX_SIZE) {
-                            width *= MAX_SIZE / height;
-                            height = MAX_SIZE;
-                        }
-                    }
-
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx?.drawImage(img, 0, 0, width, height);
-
-                    // Compress to 0.7 quality to ensure it's well under 1MB
-                    const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
-                    resolve(compressedBase64);
-                };
-                img.onerror = (err) => reject(err);
-            };
-            reader.onerror = (err) => reject(err);
-        });
-    };
 
     const handleClientChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         setSelectedClientId(e.target.value);
@@ -70,27 +29,21 @@ const Photos: React.FC<PhotosProps> = ({ onBack, clients, photos, onAddPhoto, on
         fileInputRef.current?.click();
     };
 
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            try {
-                setIsUploading(true);
-                const compressedUrl = await compressImage(file);
-
+            const reader = new FileReader();
+            reader.onloadend = () => {
                 const newPhoto: Photo = {
                     id: Date.now().toString(),
                     clientId: selectedClientId,
                     category: activeCategory,
-                    url: compressedUrl,
+                    url: reader.result as string,
                     date: new Date().toISOString()
                 };
                 onAddPhoto(newPhoto);
-            } catch (error) {
-                console.error('Error processing image:', error);
-                alert('Error al procesar la imagen. Inténtalo de nuevo.');
-            } finally {
-                setIsUploading(false);
-            }
+            };
+            reader.readAsDataURL(file);
         }
         // Reset input
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -149,8 +102,8 @@ const Photos: React.FC<PhotosProps> = ({ onBack, clients, photos, onAddPhoto, on
                         <button
                             onClick={() => setActiveCategory('actual')}
                             className={`flex-1 py-3 px-4 rounded-lg text-sm font-bold transition-all duration-300 ${activeCategory === 'actual'
-                                ? 'bg-white text-sky-600 shadow-sm'
-                                : 'text-slate-400 hover:text-slate-600'
+                                    ? 'bg-white text-sky-600 shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-600'
                                 }`}
                         >
                             Estado Actual
@@ -158,8 +111,8 @@ const Photos: React.FC<PhotosProps> = ({ onBack, clients, photos, onAddPhoto, on
                         <button
                             onClick={() => setActiveCategory('final')}
                             className={`flex-1 py-3 px-4 rounded-lg text-sm font-bold transition-all duration-300 ${activeCategory === 'final'
-                                ? 'bg-white text-emerald-600 shadow-sm'
-                                : 'text-slate-400 hover:text-slate-600'
+                                    ? 'bg-white text-emerald-600 shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-600'
                                 }`}
                         >
                             Estado Final
@@ -171,25 +124,25 @@ const Photos: React.FC<PhotosProps> = ({ onBack, clients, photos, onAddPhoto, on
 
                         {/* UPLOAD BUTTON */}
                         <div
-                            onClick={!isUploading ? handleUploadClick : undefined}
+                            onClick={handleUploadClick}
                             className={`aspect-square border-2 border-dashed rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group
                         ${activeCategory === 'actual'
                                     ? 'border-sky-200 bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-500'
                                     : 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-500'
                                 }
-                        ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}
                     `}
                         >
-                            <div className={`p-3 rounded-full bg-white/60 mb-2 shadow-sm ${isUploading ? 'animate-pulse' : ''}`}>
+                            <div className="p-3 rounded-full bg-white/60 mb-2 shadow-sm">
                                 <Camera className="w-8 h-8" />
                             </div>
-                            <span className="text-sm font-bold">{isUploading ? 'Procesando...' : 'Subir Foto'}</span>
+                            <span className="text-sm font-bold">Subir Foto</span>
                             <input
                                 type="file"
                                 ref={fileInputRef}
                                 onChange={handleFileChange}
                                 className="hidden"
                                 accept="image/*"
+                                capture="environment" // Suggests native camera on mobile
                             />
                         </div>
 
