@@ -1,81 +1,237 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { CalendarEvent } from '../types';
 import { Bell, X, Calendar as CalendarIcon, Clock } from 'lucide-react';
+import { messaging, db } from '../src/firebase';
+import { getToken, onMessage } from 'firebase/messaging';
+import { doc, setDoc, collection, getDocs, query, where, updateDoc } from 'firebase/firestore';
 
 interface NotificationManagerProps {
     events: CalendarEvent[];
 }
 
-const NotificationManager: React.FC<NotificationManagerProps> = ({ events }) => {
+export interface NotificationManagerRef {
+    requestPermission: () => Promise<void>;
+}
+
+const NotificationManager = React.forwardRef<NotificationManagerRef, NotificationManagerProps>(({ events }, ref) => {
     const [activeModalEvent, setActiveModalEvent] = useState<CalendarEvent | null>(null);
+    const [hasToken, setHasToken] = useState<boolean>(() => !!localStorage.getItem('fcm_token_registered'));
     const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>(
-        typeof Notification !== 'undefined' ? Notification.permission : 'default'
+        typeof Notification !== 'undefined' ? (Notification.permission || 'default') : 'denied'
     );
 
-    // Keep track of notified events to avoid multiple notifications for same event
+    // Use a ref for audio context to avoid external file issues
+    const audioContextRef = useRef<AudioContext | null>(null);
     const notifiedEventsRef = useRef<Set<string>>(new Set());
-    const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    useEffect(() => {
-        // Initialize notification audio
-        audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    }, []);
+    const playSafeSound = () => {
+        try {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextClass) return;
 
-    const requestPermission = async () => {
-        if (typeof Notification === 'undefined') return;
+            if (!audioContextRef.current) {
+                audioContextRef.current = new AudioContextClass();
+            }
 
-        const permission = await Notification.requestPermission();
-        setPermissionStatus(permission);
+            const ctx = audioContextRef.current;
+            if (ctx.state === 'suspended') {
+                ctx.resume();
+            }
+
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(1046.5, ctx.currentTime + 0.1);
+
+            gain.gain.setValueAtTime(0.1, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.2);
+
+            osc.start();
+            osc.stop(ctx.currentTime + 1.2);
+        } catch (e) {
+            console.error("Audio play failed", e);
+        }
     };
 
+    const requestPermission = async () => {
+        console.log('🔔 requestPermission llamada');
+        console.log('Notification disponible:', typeof Notification !== 'undefined');
+        console.log('Messaging disponible:', !!messaging);
+
+        if (typeof Notification === 'undefined' || !messaging) {
+            console.error('❌ Notification o messaging no disponible');
+            alert('Tu navegador no soporta notificaciones push o Firebase Messaging no está inicializado.');
+            return;
+        }
+
+        try {
+            console.log('📋 Solicitando permiso de notificación...');
+            const permission = await Notification.requestPermission();
+            console.log('✅ Permiso obtenido:', permission);
+            setPermissionStatus(permission);
+
+            if (permission === 'granted') {
+                console.log('🎫 Generando token FCM...');
+                const token = await getToken(messaging, {
+                    vapidKey: 'BHLlsvii-b-lqDT0u9JZQLRB-7wIffHfNasC_L2pqP7DpeOQ5qkkXv_H60n7i5gvhAkKmbe1M2Sdnlg66xGrZjA'
+                });
+
+                if (token) {
+                    console.log('✅ FCM Token generado:', token);
+                    // Save token to Firestore
+                    await setDoc(doc(db, 'fcmTokens', token), {
+                        token: token,
+                        lastUpdated: new Date().toISOString(),
+                        platform: navigator.platform
+                    });
+                    localStorage.setItem('fcm_token_registered', 'true');
+                    setHasToken(true);
+                    console.log('💾 Token guardado en Firestore');
+                    alert('✅ Notificaciones activadas correctamente');
+                } else {
+                    console.error('❌ No se pudo generar el token FCM');
+                    alert('Error: No se pudo generar el token de notificación');
+                }
+            } else {
+                console.warn('⚠️ Permiso denegado o cerrado');
+                alert('Has denegado los permisos de notificación. Ve a la configuración de tu navegador para habilitarlos.');
+            }
+        } catch (error) {
+            console.error('❌ Error en requestPermission:', error);
+            alert(`Error al activar notificaciones: ${error}`);
+        }
+    };
+
+    React.useImperativeHandle(ref, () => ({
+        requestPermission
+    }));
+
+    // Force token refresh/check on mount if permission is granted
+    useEffect(() => {
+        const silentRegister = async () => {
+            if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && messaging) {
+                try {
+                    console.log('🔄 Verifying FCM token on startup...');
+                    const token = await getToken(messaging, {
+                        vapidKey: 'BHLlsvii-b-lqDT0u9JZQLRB-7wIffHfNasC_L2pqP7DpeOQ5qkkXv_H60n7i5gvhAkKmbe1M2Sdnlg66xGrZjA'
+                    });
+
+                    if (token) {
+                        // Always update/refresh the token in Firestore to ensure it's active
+                        await setDoc(doc(db, 'fcmTokens', token), {
+                            token: token,
+                            lastUpdated: new Date().toISOString(),
+                            platform: navigator.platform,
+                            userAgent: navigator.userAgent
+                        }, { merge: true });
+
+                        setHasToken(true);
+                        localStorage.setItem('fcm_token_registered', 'true');
+                        console.log('✅ FCM Token verified and updated in Firestore');
+                    }
+                } catch (err) {
+                    console.error('Silent token registration failed:', err);
+                }
+            }
+        };
+
+        silentRegister();
+    }, []);
+
+    useEffect(() => {
+        if (!messaging) return;
+
+        // Handle foreground messages
+        const unsubscribe = onMessage(messaging, (payload) => {
+            console.log('Foreground message received:', payload);
+            if (payload.data && payload.data.eventId) {
+                const foundEvent = events.find(e => e.id === payload.data?.eventId);
+                if (foundEvent && foundEvent.dismissed !== true) {
+                    setActiveModalEvent(foundEvent);
+                    playSafeSound();
+                }
+            }
+        });
+
+        return () => unsubscribe();
+    }, [events]);
+
+    // Effect to handle eventId in URL on load
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const eventId = urlParams.get('eventId');
+        if (eventId && events.length > 0) {
+            const foundEvent = events.find(e => e.id === eventId);
+            if (foundEvent) {
+                setActiveModalEvent(foundEvent);
+                // Clean up URL without reloading
+                window.history.replaceState({}, document.title, "/");
+            }
+        }
+    }, [events]);
+
+    // Local notifications are ENABLED for testing both systems
+    // This will cause duplicates with FCM, but allows the user to test everything
     useEffect(() => {
         const checkEvents = () => {
             const now = new Date();
-            const currentDay = now.toISOString().split('T')[0];
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const currentDay = `${year}-${month}-${day}`;
+
             const currentTime = now.getHours().toString().padStart(2, '0') + ':' +
                 now.getMinutes().toString().padStart(2, '0');
 
             events.forEach(event => {
-                // If event is exactly now and hasn't been notified yet
                 if (event.date === currentDay && event.time === currentTime && !notifiedEventsRef.current.has(event.id)) {
                     triggerNotification(event);
                     notifiedEventsRef.current.add(event.id);
                 }
             });
-
-            // Cleanup notified events that are in the past (to save memory)
-            // This is simple: if the event date is older than today, or same day but older time, 
-            // we could remove it, but keeping it for the session is safer to avoid re-triggering.
         };
 
         const triggerNotification = (event: CalendarEvent) => {
-            // 1. Play Sound
-            if (audioRef.current) {
-                audioRef.current.play().catch(e => console.log('Audio play failed:', e));
+            try {
+                setActiveModalEvent(event);
+                playSafeSound();
+            } catch (err) {
+                console.error('Critical error in triggerNotification:', err);
+                alert(`Recordatorio: ${event.title}\n${event.time}`);
             }
-
-            // 2. Show Browser Notification
-            if (Notification.permission === 'granted') {
-                new Notification(`Recordatorio: ${event.title}`, {
-                    body: `${event.time} - ${event.description || 'Sin descripción'}`,
-                    icon: '/pwa-192x192.png'
-                });
-            }
-
-            // 3. Show In-App Modal
-            setActiveModalEvent(event);
         };
 
-        // Check every 30 seconds
         const interval = setInterval(checkEvents, 30000);
-
-        // Initial check
         checkEvents();
-
         return () => clearInterval(interval);
     }, [events]);
 
-    if (permissionStatus === 'default' && !activeModalEvent) {
+    const handleActivate = () => {
+        requestPermission();
+        playSafeSound(); // "Prime" audio context on user gesture
+    };
+
+    const handleDismiss = async () => {
+        if (activeModalEvent) {
+            try {
+                // Mark event as dismissed in Firestore so the cloud function stops sending push
+                await updateDoc(doc(db, 'events', activeModalEvent.id), {
+                    dismissed: true
+                });
+                setActiveModalEvent(null);
+            } catch (error) {
+                console.error('Error dismissing event:', error);
+                setActiveModalEvent(null);
+            }
+        }
+    };
+
+    if ((permissionStatus === 'default' || (permissionStatus === 'granted' && !hasToken)) && !activeModalEvent) {
         return (
             <div className="fixed bottom-24 left-4 right-4 z-[200] md:left-auto md:right-4 md:w-80 bg-white rounded-2xl shadow-2xl border border-indigo-100 p-4 animate-bounce-subtle">
                 <div className="flex items-start gap-4">
@@ -84,10 +240,10 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ events }) => 
                     </div>
                     <div className="flex-1">
                         <h4 className="text-sm font-bold text-slate-800">Activar Notificaciones</h4>
-                        <p className="text-xs text-slate-500 mb-3">Recibe avisos de tus citas y obras a tiempo.</p>
+                        <p className="text-xs text-slate-500 mb-3">Haz clic en Activar para permitir avisos y sonido en este dispositivo.</p>
                         <div className="flex gap-2">
                             <button
-                                onClick={requestPermission}
+                                onClick={handleActivate}
                                 className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors"
                             >
                                 Activar
@@ -144,10 +300,10 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ events }) => 
                         )}
 
                         <button
-                            onClick={() => setActiveModalEvent(null)}
+                            onClick={handleDismiss}
                             className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-bold shadow-lg transition-all active:scale-[0.98]"
                         >
-                            Entendido
+                            ENTENDIDO (Silenciar)
                         </button>
                     </div>
                 </div>
@@ -156,6 +312,6 @@ const NotificationManager: React.FC<NotificationManagerProps> = ({ events }) => 
     }
 
     return null;
-};
+});
 
 export default NotificationManager;

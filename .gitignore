@@ -26,3 +26,8 @@ dist-ssr
 # Environment variables
 .env
 .env.local
+
+# Backups and Temp
+*.zip
+temp_backup/
+temp_extracted_app/

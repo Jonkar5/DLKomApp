@@ -291,6 +291,12 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
     const matchesCategory = categoryFilter === 'Todas' || expense.category === categoryFilter;
     const matchesStatus = statusFilter === 'Todos' || (expense.paymentStatus || 'Pendiente') === statusFilter;
     return matchesClient && matchesCategory && matchesStatus;
+  }).sort((a, b) => {
+    // Primero ordenar por fecha (más reciente primero)
+    const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    // Si la fecha es igual, ordenar por creación (ID más reciente primero)
+    return b.id.localeCompare(a.id);
   });
 
   return (

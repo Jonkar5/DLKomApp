@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
     BarChart,
     Bar,
@@ -64,11 +64,18 @@ const Profits: React.FC<ProfitsProps> = ({
     const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
 
     // --- Distribution State ---
-    const [partners, setPartners] = useState<{ name: string, percentage: number }[]>([
-        { name: 'Socio 1', percentage: 33 },
-        { name: 'Socio 2', percentage: 33 },
-        { name: 'DLKom', percentage: 34 }
-    ]);
+    const [partners, setPartners] = useState<{ name: string, percentage: number }[]>(() => {
+        const saved = localStorage.getItem('profitPartners');
+        return saved ? JSON.parse(saved) : [
+            { name: 'Socio 1', percentage: 33 },
+            { name: 'Socio 2', percentage: 33 },
+            { name: 'DLKom', percentage: 34 }
+        ];
+    });
+
+    useEffect(() => {
+        localStorage.setItem('profitPartners', JSON.stringify(partners));
+    }, [partners]);
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
@@ -225,6 +232,16 @@ const Profits: React.FC<ProfitsProps> = ({
             setIsDeleteConfirmModalOpen(false);
             setSelectedDistribution(null);
         }
+    };
+
+    const handleAddPartner = () => {
+        setPartners([...partners, { name: 'Nuevo Socio', percentage: 0 }]);
+    };
+
+    const handleRemovePartner = (index: number) => {
+        const newPartners = [...partners];
+        newPartners.splice(index, 1);
+        setPartners(newPartners);
     };
 
     const generateDistributionPDF = (dist: ProfitDistribution) => {
@@ -516,8 +533,14 @@ const Profits: React.FC<ProfitsProps> = ({
                                         />
                                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
                                     </div>
+                                    <button onClick={() => handleRemovePartner(idx)} className="p-3 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-colors" title="Eliminar socio">
+                                        <Trash2 className="w-5 h-5" />
+                                    </button>
                                 </div>
                             ))}
+                            <button onClick={handleAddPartner} className="w-full py-4 mt-2 border-2 border-dashed border-slate-200 text-slate-400 font-bold rounded-2xl hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2">
+                                <Plus className="w-5 h-5" /> Añadir Socio
+                            </button>
                             <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
                                 <button onClick={() => setIsConfigModalOpen(false)} className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition">Aceptar</button>
                             </div>

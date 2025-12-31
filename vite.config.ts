@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => {
   return {
     base: '/',
     server: {
-      port: 3000,
+      port: 3333,
       host: '0.0.0.0',
     },
     plugins: [
@@ -17,8 +17,8 @@ export default defineConfig(({ mode }) => {
         registerType: 'autoUpdate',
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
         manifest: {
-          name: 'DLKom Gestión',
-          short_name: 'DLKom',
+          name: 'DLKom Gestión v2',
+          short_name: 'DLKom v2',
           description: 'Gestión de obras y reformas DLKom',
           theme_color: '#ffffff',
           icons: [

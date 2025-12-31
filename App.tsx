@@ -6,7 +6,7 @@ import Expenses from './pages/Expenses';
 import Profits from './pages/Profits';
 import CalendarPage from './pages/CalendarPage';
 import Photos from './pages/Photos';
-import NotificationManager from './components/NotificationManager';
+import NotificationManager, { NotificationManagerRef } from './components/NotificationManager';
 import { useFirestore } from './src/hooks/useFirestore';
 import {
   Users,
@@ -19,6 +19,7 @@ import {
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
+  const notificationRef = React.useRef<NotificationManagerRef>(null);
 
   // Centralized State - Firestore
   const [logo, setLogo] = useState<string | null>(() => localStorage.getItem('appLogo'));
@@ -59,9 +60,16 @@ const App: React.FC = () => {
   } = useFirestore<Photo>('photos');
 
   // Effect to update Favicon and LocalStorage when logo changes
+  // Effect to update Favicon and LocalStorage when logo changes
   useEffect(() => {
     if (logo) {
-      localStorage.setItem('appLogo', logo);
+      try {
+        localStorage.setItem('appLogo', logo);
+      } catch (error) {
+        console.error("Error saving logo to localStorage", error);
+        alert("La imagen del logo es demasiado grande para guardarse. Se ha redimensionado automáticamente, pero si sigue fallando, pruebe con una imagen más pequeña.");
+      }
+
       let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
       if (!link) {
         link = document.createElement('link');
@@ -74,11 +82,33 @@ const App: React.FC = () => {
     }
   }, [logo]);
 
+  // --- Navigation & History Handler ---
+  useEffect(() => {
+    // Initial state
+    window.history.replaceState({ view: 'dashboard' }, '', '');
+
+    const handlePopState = (event: PopStateEvent) => {
+      if (event.state && event.state.view) {
+        setCurrentView(event.state.view);
+      } else {
+        // Fallback or default
+        setCurrentView('dashboard');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleNavigate = (view: ViewState) => {
+    window.history.pushState({ view }, '', '');
     setCurrentView(view);
   };
 
-  const goHome = () => setCurrentView('dashboard');
+  const goHome = () => {
+    window.history.pushState({ view: 'dashboard' }, '', '');
+    setCurrentView('dashboard');
+  };
 
   // --- Logo Handler ---
   const handleLogoChange = (newLogo: string | null) => {
@@ -186,6 +216,7 @@ const App: React.FC = () => {
             events={events}
             logo={logo}
             onLogoChange={handleLogoChange}
+            onRequestNotifications={() => notificationRef.current?.requestPermission()}
           />
         );
     }
@@ -195,7 +226,10 @@ const App: React.FC = () => {
     const isActive = currentView === view;
     return (
       <button
-        onClick={() => setCurrentView(view)}
+        onClick={() => {
+          window.history.pushState({ view }, '', '');
+          setCurrentView(view);
+        }}
         className={`flex flex-col items-center justify-center gap-1 p-2 transition-colors ${isActive ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
       >
         <Icon className={`w-6 h-6 ${isActive ? 'stroke-2' : 'stroke-1.5'}`} />
@@ -206,7 +240,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans flex flex-col">
-      <NotificationManager events={events} />
+      <NotificationManager ref={notificationRef} events={events} />
       <main className={`w-full flex-1 ${currentView === 'dashboard' ? 'pb-20' : 'pb-4'}`}>
         {renderContent()}
       </main>
