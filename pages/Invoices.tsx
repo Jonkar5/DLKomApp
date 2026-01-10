@@ -243,9 +243,9 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                 {filteredInvoices.length > 0 ? (
                     filteredInvoices.map(invoice => (
-                        <div key={invoice.id} className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100 group hover:shadow-md transition-all">
+                        <div key={invoice.id} className="bg-white rounded-2xl p-2 shadow-sm border border-slate-100 group hover:shadow-md transition-all">
                             <div
-                                className="aspect-[3/4] rounded-2xl bg-slate-100 overflow-hidden relative cursor-pointer mb-3"
+                                className="aspect-[3/4] rounded-xl bg-slate-100 overflow-hidden relative cursor-pointer mb-2"
                                 onClick={() => setSelectedImage(invoice.imageUrl)}
                             >
                                 <img src={invoice.imageUrl} alt="Factura" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
@@ -253,17 +253,17 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
                             </div>
                             <div className="flex justify-between items-start">
                                 <div>
-                                    <h3 className="font-bold text-slate-800 truncate pr-2">{invoice.provider}</h3>
-                                    <p className="text-xs text-slate-500 font-medium flex items-center gap-1">
-                                        <Calendar className="w-3 h-3" />
+                                    <h3 className="text-sm font-bold text-slate-800 truncate pr-1">{invoice.provider}</h3>
+                                    <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1">
+                                        <Calendar className="w-2.5 h-2.5" />
                                         {new Date(invoice.date).toLocaleDateString()}
                                     </p>
                                 </div>
                                 <button
                                     onClick={() => { if (confirm('¿Borrar factura?')) onDeleteInvoice(invoice.id); }}
-                                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                                    className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
                                 >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                             </div>
                         </div>
