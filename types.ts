@@ -64,4 +64,14 @@ export interface ProfitDistribution {
   notes?: string;
 }
 
-export type ViewState = 'dashboard' | 'clients' | 'expenses' | 'profits' | 'calendar' | 'photos';
+export interface SupplierInvoice {
+  id: string;
+  provider: string;
+  date: string;
+  imageUrl: string; // Base64 compressed image or PDF data uri
+  fileType?: 'image' | 'pdf';
+  amount?: number;
+  notes?: string;
+}
+
+export type ViewState = 'dashboard' | 'clients' | 'expenses' | 'profits' | 'calendar' | 'photos' | 'invoices';

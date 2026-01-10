@@ -40,6 +40,8 @@ import { Client, Expense, ProfitDistribution, ProfitDistributionItem } from '../
 import { jsPDF } from 'jspdf';
 // @ts-ignore
 import autoTable from 'jspdf-autotable';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from '../src/firebase';
 
 interface ProfitsProps {
     onBack: () => void;
@@ -64,7 +66,7 @@ const Profits: React.FC<ProfitsProps> = ({
     const [chartType, setChartType] = useState<'bar' | 'pie'>('bar');
 
     // --- Distribution State ---
-    const [partners, setPartners] = useState<{ name: string, percentage: number }[]>(() => {
+    const [partners, setPartners] = useState<{ name: string, percentage: number | '' }[]>(() => {
         const saved = localStorage.getItem('profitPartners');
         return saved ? JSON.parse(saved) : [
             { name: 'Socio 1', percentage: 33 },
@@ -73,9 +75,31 @@ const Profits: React.FC<ProfitsProps> = ({
         ];
     });
 
+    // Sync from Firestore
     useEffect(() => {
-        localStorage.setItem('profitPartners', JSON.stringify(partners));
-    }, [partners]);
+        const unsubscribe = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
+            if (doc.exists()) {
+                const data = doc.data();
+                if (data.partners) {
+                    setPartners(data.partners);
+                    // Update cache
+                    localStorage.setItem('profitPartners', JSON.stringify(data.partners));
+                }
+            }
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const updatePartners = async (newPartners: { name: string, percentage: number | '' }[]) => {
+        setPartners(newPartners);
+        localStorage.setItem('profitPartners', JSON.stringify(newPartners)); // Optimistic cache
+        try {
+            await setDoc(doc(db, 'settings', 'global'), { partners: newPartners }, { merge: true });
+        } catch (e) {
+            console.error("Error updating partners in cloud", e);
+        }
+    };
+
     const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
     const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
@@ -170,8 +194,8 @@ const Profits: React.FC<ProfitsProps> = ({
         const items: ProfitDistributionItem[] = partners.map(p => ({
             id: p.name,
             name: p.name,
-            percentage: p.percentage,
-            amount: (totalProfit * p.percentage) / 100,
+            percentage: typeof p.percentage === 'number' ? p.percentage : 0,
+            amount: (totalProfit * (typeof p.percentage === 'number' ? p.percentage : 0)) / 100,
             status: 'Pendiente'
         }));
 
@@ -235,13 +259,13 @@ const Profits: React.FC<ProfitsProps> = ({
     };
 
     const handleAddPartner = () => {
-        setPartners([...partners, { name: 'Nuevo Socio', percentage: 0 }]);
+        updatePartners([...partners, { name: 'Nuevo Socio', percentage: 0 }]);
     };
 
     const handleRemovePartner = (index: number) => {
         const newPartners = [...partners];
         newPartners.splice(index, 1);
-        setPartners(newPartners);
+        updatePartners(newPartners);
     };
 
     const generateDistributionPDF = (dist: ProfitDistribution) => {
@@ -423,7 +447,7 @@ const Profits: React.FC<ProfitsProps> = ({
                                         {p.name}
                                     </span>
                                     <span className="font-bold text-slate-700 text-xs sm:text-sm">
-                                        {((totalProfit * p.percentage) / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
+                                        {((totalProfit * (typeof p.percentage === 'number' ? p.percentage : 0)) / 100).toLocaleString('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 })}
                                     </span>
                                 </div>
                             ))}
@@ -509,33 +533,49 @@ const Profits: React.FC<ProfitsProps> = ({
                         </div>
                         <div className="space-y-4">
                             {partners.map((p, idx) => (
-                                <div key={idx} className="flex gap-3 items-center">
+                                <div key={idx} className="flex flex-col md:flex-row gap-3 items-start md:items-center p-4 md:p-0 bg-slate-50 md:bg-white border md:border-0 border-slate-100 rounded-2xl mb-4 md:mb-0">
+                                    <span className="md:hidden text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Socio {idx + 1}</span>
                                     <input
                                         value={p.name}
                                         onChange={(e) => {
                                             const newPartners = [...partners];
                                             newPartners[idx].name = e.target.value;
-                                            setPartners(newPartners);
+                                            updatePartners(newPartners);
                                         }}
-                                        className="flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-indigo-100 outline-none"
+                                        className="w-full md:flex-1 px-4 py-3 rounded-2xl border border-slate-200 text-sm font-semibold focus:ring-2 focus:ring-indigo-100 outline-none"
                                         placeholder="Nombre"
                                     />
-                                    <div className="relative w-24">
-                                        <input
-                                            type="number"
-                                            value={p.percentage}
-                                            onChange={(e) => {
-                                                const newPartners = [...partners];
-                                                newPartners[idx].percentage = Number(e.target.value);
-                                                setPartners(newPartners);
-                                            }}
-                                            className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-bold text-center focus:ring-2 focus:ring-indigo-100 outline-none"
-                                        />
-                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">%</span>
+                                    <div className="flex gap-3 w-full md:w-auto items-center">
+                                        <div className="relative flex-1 md:w-32">
+                                            <input
+                                                type="text"
+                                                inputMode="decimal"
+                                                value={p.percentage}
+                                                onChange={(e) => {
+                                                    const val = e.target.value;
+                                                    const newPartners = [...partners];
+                                                    // Allow empty string to clear the input, otherwise parse number
+                                                    if (val === '') {
+                                                        // @ts-ignore
+                                                        newPartners[idx].percentage = '';
+                                                    } else {
+                                                        const cleanVal = val.replace(',', '.');
+                                                        const num = Number(cleanVal);
+                                                        if (!isNaN(num)) {
+                                                            newPartners[idx].percentage = num;
+                                                        }
+                                                    }
+                                                    updatePartners(newPartners);
+                                                }}
+                                                className="w-full pl-4 pr-8 py-3 rounded-2xl border border-slate-200 text-lg font-bold text-center focus:ring-4 focus:ring-indigo-100 outline-none"
+                                                placeholder="0"
+                                            />
+                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-lg font-bold text-slate-400 pointer-events-none">%</span>
+                                        </div>
+                                        <button onClick={() => handleRemovePartner(idx)} className="p-3 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-colors shrink-0" title="Eliminar socio">
+                                            <Trash2 className="w-5 h-5" />
+                                        </button>
                                     </div>
-                                    <button onClick={() => handleRemovePartner(idx)} className="p-3 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-colors" title="Eliminar socio">
-                                        <Trash2 className="w-5 h-5" />
-                                    </button>
                                 </div>
                             ))}
                             <button onClick={handleAddPartner} className="w-full py-4 mt-2 border-2 border-dashed border-slate-200 text-slate-400 font-bold rounded-2xl hover:border-indigo-300 hover:text-indigo-500 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2">

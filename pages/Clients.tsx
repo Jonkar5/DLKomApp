@@ -95,7 +95,11 @@ const Clients: React.FC<ClientsProps> = ({ onBack, clients, onAddClient, onUpdat
     const matchesStatus = statusFilter === 'Todos' || client.status === statusFilter;
     const matchesPaymentStatus = paymentStatusFilter === 'Todos' || (client.paymentStatus || 'Pendiente') === paymentStatusFilter;
     return matchesClient && matchesStatus && matchesPaymentStatus;
-  }).sort((a, b) => b.id.localeCompare(a.id));
+  }).sort((a, b) => {
+    const dateA = new Date(a.joinDate || 0).getTime();
+    const dateB = new Date(b.joinDate || 0).getTime();
+    return dateB - dateA || b.id.localeCompare(a.id);
+  });
 
   // --- Handlers ---
 

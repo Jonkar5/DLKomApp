@@ -10,7 +10,8 @@ import {
   Search,
   ChevronRight,
   Eraser,
-  RefreshCw
+  RefreshCw,
+  FileText
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -33,23 +34,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, events, logo, onLogoC
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          const MAX_SIZE = 500;
+          const maxDim = 300; // Reduced from 500 to safe-guard 1MB limit for Firestore
 
           if (width > height) {
-            if (width > MAX_SIZE) {
-              height *= MAX_SIZE / width;
-              width = MAX_SIZE;
+            if (width > maxDim) {
+              height *= maxDim / width;
+              width = maxDim;
             }
           } else {
-            if (height > MAX_SIZE) {
-              width *= MAX_SIZE / height;
-              height = MAX_SIZE;
+            if (height > maxDim) {
+              width *= maxDim / height;
+              height = maxDim;
             }
           }
 
@@ -58,10 +59,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, events, logo, onLogoC
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
 
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8); // Compress to JPEG
+          // Compress to JPEG with lower quality
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          console.log("Resized Logo Size:", dataUrl.length * 0.75, "bytes");
           onLogoChange(dataUrl);
         };
-        img.src = event.target?.result as string;
+        img.src = e.target?.result as string;
       };
       reader.readAsDataURL(file);
     }
@@ -79,7 +82,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, events, logo, onLogoC
       try {
         localStorage.clear();
         sessionStorage.clear();
-        onLogoChange(null);
+        // onLogoChange(null); // REMOVED: Do not delete from cloud when clearing local cache
         window.location.reload();
       } catch (e) {
         console.error('Error al borrar caché', e);
@@ -151,7 +154,14 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, events, logo, onLogoC
             className="w-24 h-24 md:w-28 md:h-28 rounded-2xl bg-slate-100 border-2 border-dashed border-slate-200 flex items-center justify-center cursor-pointer hover:border-indigo-400 hover:bg-slate-50 overflow-hidden relative group shadow-sm transition-all"
           >
             {logo ? (
-              <img src={logo} alt="Logo" className="w-full h-full object-cover" />
+              <div className="relative group w-full h-full flex items-center justify-center p-1">
+                <img src={logo} alt="Logo" className="w-full h-full object-contain cursor-pointer hover:opacity-80 transition-opacity" onClick={() => document.getElementById('logo-upload')?.click()} />
+                <div className="absolute top-full left-0 mt-1 hidden group-hover:block whitespace-nowrap z-20">
+                  <span className="text-[10px] bg-slate-800 text-white px-2 py-1 rounded-lg">Click para cambiar</span>
+                </div>
+                <div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-sm border border-white" title="Guardado en Nube"></div>
+                {/* <span className="text-[10px] font-bold text-emerald-600">Guardado en Nube</span> REMOVED: Simplified to just dot */}
+              </div>
             ) : (
               <div className="flex flex-col items-center text-slate-400 group-hover:text-indigo-500">
                 <Upload className="w-8 h-8 mb-1" />
@@ -203,7 +213,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate, events, logo, onLogoC
           <DashboardCard view="photos" icon={ImageIcon} title="Fotos" color="sky" delay="delay-200" />
 
           {/* Fila 3 - Full Width */}
-          <DashboardCard view="calendar" icon={Calendar} title="Calendario" color="orange" delay="delay-300" fullWidth={true} compact={true} />
+          <div className="col-span-2 grid grid-cols-2 gap-3 md:gap-6">
+            <DashboardCard view="invoices" icon={FileText} title="Facturas Proveedor" color="blue" delay="delay-200" />
+            <DashboardCard view="calendar" icon={Calendar} title="Calendario" color="orange" delay="delay-300" />
+          </div>
         </div>
       </div>
     </div>

@@ -6,6 +6,7 @@ import Expenses from './pages/Expenses';
 import Profits from './pages/Profits';
 import CalendarPage from './pages/CalendarPage';
 import Photos from './pages/Photos';
+import Invoices from './pages/Invoices';
 import NotificationManager, { NotificationManagerRef } from './components/NotificationManager';
 import { useFirestore } from './src/hooks/useFirestore';
 import {
@@ -14,8 +15,11 @@ import {
   TrendingUp,
   Calendar,
   Image as ImageIcon,
-  LayoutDashboard
+  LayoutDashboard,
+  FileText
 } from 'lucide-react';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { db } from './src/firebase';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
@@ -59,17 +63,34 @@ const App: React.FC = () => {
     remove: deletePhoto
   } = useFirestore<Photo>('photos');
 
-  // Effect to update Favicon and LocalStorage when logo changes
-  // Effect to update Favicon and LocalStorage when logo changes
+  const {
+    data: invoices,
+    add: addInvoice,
+    remove: deleteInvoice
+  } = useFirestore<import('./types').SupplierInvoice>('supplier_invoices');
+
+  // Effect to sync Logo with Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(doc(db, 'settings', 'global'), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        if (data.logo) {
+          setLogo(data.logo);
+          try {
+            localStorage.setItem('appLogo', data.logo);
+          } catch (e) {
+            console.error("Local storage full", e);
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Effect to update Favicon
   useEffect(() => {
     if (logo) {
-      try {
-        localStorage.setItem('appLogo', logo);
-      } catch (error) {
-        console.error("Error saving logo to localStorage", error);
-        alert("La imagen del logo es demasiado grande para guardarse. Se ha redimensionado automáticamente, pero si sigue fallando, pruebe con una imagen más pequeña.");
-      }
-
       let link = document.querySelector("link[rel~='icon']") as HTMLLinkElement;
       if (!link) {
         link = document.createElement('link');
@@ -77,21 +98,17 @@ const App: React.FC = () => {
         document.getElementsByTagName('head')[0].appendChild(link);
       }
       link.href = logo;
-    } else {
-      localStorage.removeItem('appLogo');
     }
   }, [logo]);
 
   // --- Navigation & History Handler ---
   useEffect(() => {
-    // Initial state
     window.history.replaceState({ view: 'dashboard' }, '', '');
 
     const handlePopState = (event: PopStateEvent) => {
       if (event.state && event.state.view) {
         setCurrentView(event.state.view);
       } else {
-        // Fallback or default
         setCurrentView('dashboard');
       }
     };
@@ -111,11 +128,24 @@ const App: React.FC = () => {
   };
 
   // --- Logo Handler ---
-  const handleLogoChange = (newLogo: string | null) => {
+  const handleLogoChange = async (newLogo: string | null) => {
     setLogo(newLogo);
+    try {
+      if (newLogo) {
+        const sizeInBytes = newLogo.length * 0.75;
+        if (sizeInBytes > 900000) {
+          alert("La imagen es demasiado grande incluso después de redimensionar. Intenta con una imagen más pequeña.");
+          return;
+        }
+      }
+      await setDoc(doc(db, 'settings', 'global'), { logo: newLogo }, { merge: true });
+    } catch (error) {
+      console.error("Error saving logo to Firestore:", error);
+      alert("Error al guardar el logo en la nube. Puede que la imagen sea demasiado pesada (Máx 1MB).");
+    }
   };
 
-  // --- Wrapper Handlers for Type Compatibility ---
+  // --- Wrapper Handlers ---
   const handleAddEvent = (event: CalendarEvent) => addEvent(event);
   const handleUpdateEvent = (event: CalendarEvent) => updateEvent(event.id, event);
   const handleDeleteEvent = (id: string) => deleteEvent(id);
@@ -209,6 +239,17 @@ const App: React.FC = () => {
             />
           </div>
         );
+      case 'invoices':
+        return (
+          <div className="max-w-7xl mx-auto p-4 md:p-8">
+            <Invoices
+              onBack={goHome}
+              invoices={invoices}
+              onAddInvoice={(inv) => addInvoice(inv)}
+              onDeleteInvoice={(id) => deleteInvoice(id)}
+            />
+          </div>
+        );
       default:
         return (
           <Dashboard
@@ -247,12 +288,13 @@ const App: React.FC = () => {
 
       {/* Global Bottom Navigation - Only on Dashboard */}
       {currentView === 'dashboard' && (
-        <div className="fixed bottom-0 w-full h-20 bg-white border-t border-slate-200 grid grid-cols-6 items-center px-2 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-[100]">
+        <div className="fixed bottom-0 w-full h-20 bg-white border-t border-slate-200 grid grid-cols-7 items-center px-2 shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-[100]">
           <BottomTab view="dashboard" icon={LayoutDashboard} label="Inicio" />
           <BottomTab view="clients" icon={Users} label="Clientes" />
           <BottomTab view="expenses" icon={CreditCard} label="Gastos" />
           <BottomTab view="profits" icon={TrendingUp} label="Beneficios" />
           <BottomTab view="photos" icon={ImageIcon} label="Fotos" />
+          <BottomTab view="invoices" icon={FileText} label="Facturas" />
           <BottomTab view="calendar" icon={Calendar} label="Agenda" />
         </div>
       )}
