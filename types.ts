@@ -70,7 +70,8 @@ export interface SupplierInvoice {
   date: string;
   imageUrl: string; // Base64 compressed image or PDF data uri
   fileType?: 'image' | 'pdf';
-  amount?: number;
+  baseAmount?: number; // Base imponible
+  totalAmount?: number; // Total factura
   notes?: string;
 }
 

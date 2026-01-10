@@ -66,6 +66,7 @@ const App: React.FC = () => {
   const {
     data: invoices,
     add: addInvoice,
+    update: updateInvoice,
     remove: deleteInvoice
   } = useFirestore<import('./types').SupplierInvoice>('supplier_invoices');
 
@@ -246,6 +247,7 @@ const App: React.FC = () => {
               onBack={goHome}
               invoices={invoices}
               onAddInvoice={(inv) => addInvoice(inv)}
+              onUpdateInvoice={(id, updates) => updateInvoice(id, updates)}
               onDeleteInvoice={(id) => deleteInvoice(id)}
             />
           </div>

@@ -11,7 +11,8 @@ import {
     Upload,
     FileText,
     Image as ImageIcon,
-    Download
+    Download,
+    Edit
 } from 'lucide-react';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
@@ -20,22 +21,27 @@ interface InvoicesProps {
     onBack: () => void;
     invoices: SupplierInvoice[];
     onAddInvoice: (invoice: SupplierInvoice) => void;
+    onUpdateInvoice: (id: string, updates: Partial<SupplierInvoice>) => void;
     onDeleteInvoice: (id: string) => void;
 }
 
-const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onDeleteInvoice }) => {
+const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onUpdateInvoice, onDeleteInvoice }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterDate, setFilterDate] = useState('');
 
     // Modal State
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
     const [selectedImage, setSelectedImage] = useState<string | null>(null);
+    const [editingInvoice, setEditingInvoice] = useState<SupplierInvoice | null>(null);
 
     // Form State
     const [provider, setProvider] = useState('');
     const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
     const [invoiceImage, setInvoiceImage] = useState<string | null>(null);
+    const [baseAmount, setBaseAmount] = useState<number | ''>('');
+    const [totalAmount, setTotalAmount] = useState<number | ''>('');
 
     // Report State
     const [reportProvider, setReportProvider] = useState('');
@@ -83,6 +89,15 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
         }
     };
 
+    const handleEditClick = (invoice: SupplierInvoice) => {
+        setEditingInvoice(invoice);
+        setProvider(invoice.provider);
+        setInvoiceDate(invoice.date);
+        setBaseAmount(invoice.baseAmount ?? '');
+        setTotalAmount(invoice.totalAmount ?? '');
+        setIsEditModalOpen(true);
+    };
+
     const handleSaveInvoice = (e: React.FormEvent) => {
         e.preventDefault();
         if (!invoiceImage) {
@@ -94,7 +109,9 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
             id: Date.now().toString(),
             provider,
             date: invoiceDate,
-            imageUrl: invoiceImage
+            imageUrl: invoiceImage,
+            baseAmount: baseAmount === '' ? undefined : Number(baseAmount),
+            totalAmount: totalAmount === '' ? undefined : Number(totalAmount)
         };
 
         onAddInvoice(newInvoice);
@@ -103,6 +120,27 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
         setProvider('');
         setInvoiceDate(new Date().toISOString().split('T')[0]);
         setInvoiceImage(null);
+        setBaseAmount('');
+        setTotalAmount('');
+    };
+
+    const handleUpdateInvoice = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingInvoice) return;
+
+        onUpdateInvoice(editingInvoice.id, {
+            provider,
+            date: invoiceDate,
+            baseAmount: baseAmount === '' ? undefined : Number(baseAmount),
+            totalAmount: totalAmount === '' ? undefined : Number(totalAmount)
+        });
+
+        setIsEditModalOpen(false);
+        setEditingInvoice(null);
+        setProvider('');
+        setInvoiceDate(new Date().toISOString().split('T')[0]);
+        setBaseAmount('');
+        setTotalAmount('');
     };
 
     const handleGeneratePDF = () => {
@@ -130,6 +168,10 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
         doc.text("Informe de Facturas", 14, 20);
         doc.setFontSize(10);
         doc.text(`Generado: ${new Date().toLocaleDateString()}`, 14, 28);
+
+        // Calculate totals
+        const totalBase = filteredForReport.reduce((sum, inv) => sum + (inv.baseAmount || 0), 0);
+        const totalFinal = filteredForReport.reduce((sum, inv) => sum + (inv.totalAmount || 0), 0);
 
         let yPos = 40;
 
@@ -168,6 +210,19 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
 
             yPos += 10; // Spacing between items
         });
+
+        // Add totals summary at the end
+        if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+        }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('TOTALES', 14, yPos + 10);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Base Imponible Total: ${totalBase.toFixed(2)}€`, 14, yPos + 18);
+        doc.text(`Total Facturas: ${totalFinal.toFixed(2)}€`, 14, yPos + 26);
 
         doc.save('facturas_proveedores.pdf');
         setIsReportModalOpen(false);
@@ -259,12 +314,20 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
                                         {new Date(invoice.date).toLocaleDateString()}
                                     </p>
                                 </div>
-                                <button
-                                    onClick={() => { if (confirm('¿Borrar factura?')) onDeleteInvoice(invoice.id); }}
-                                    className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
-                                >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex gap-1">
+                                    <button
+                                        onClick={() => handleEditClick(invoice)}
+                                        className="p-1.5 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors"
+                                    >
+                                        <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                        onClick={() => { if (confirm('¿Borrar factura?')) onDeleteInvoice(invoice.id); }}
+                                        className="p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     ))
@@ -323,8 +386,106 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onD
                                     onClick={(e) => e.currentTarget.showPicker?.()}
                                 />
                             </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Base Imponible</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={baseAmount}
+                                            onChange={(e) => setBaseAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full pl-4 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                            placeholder="0.00"
+                                        />
+                                        <span className="absolute right-3 top-3 text-slate-400 text-sm">€</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Total Factura</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={totalAmount}
+                                            onChange={(e) => setTotalAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full pl-4 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                            placeholder="0.00"
+                                        />
+                                        <span className="absolute right-3 top-3 text-slate-400 text-sm">€</span>
+                                    </div>
+                                </div>
+                            </div>
                             <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all mt-4">
                                 Guardar Factura
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Edit */}
+            {isEditModalOpen && editingInvoice && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 animate-bounce-subtle">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-slate-800">Editar Factura</h3>
+                            <button onClick={() => setIsEditModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+                        </div>
+                        <form onSubmit={handleUpdateInvoice} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Proveedor</label>
+                                <input
+                                    required
+                                    value={provider}
+                                    onChange={(e) => setProvider(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                    placeholder="Nombre del proveedor"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 mb-1">Fecha</label>
+                                <input
+                                    type="date"
+                                    required
+                                    value={invoiceDate}
+                                    onChange={(e) => setInvoiceDate(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                    onClick={(e) => e.currentTarget.showPicker?.()}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Base Imponible</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={baseAmount}
+                                            onChange={(e) => setBaseAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full pl-4 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                            placeholder="0.00"
+                                        />
+                                        <span className="absolute right-3 top-3 text-slate-400 text-sm">€</span>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Total Factura</label>
+                                    <div className="relative">
+                                        <input
+                                            type="number"
+                                            step="0.01"
+                                            value={totalAmount}
+                                            onChange={(e) => setTotalAmount(e.target.value === '' ? '' : Number(e.target.value))}
+                                            className="w-full pl-4 pr-8 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
+                                            placeholder="0.00"
+                                        />
+                                        <span className="absolute right-3 top-3 text-slate-400 text-sm">€</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-200 transition-all mt-4">
+                                Actualizar Factura
                             </button>
                         </form>
                     </div>
