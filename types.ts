@@ -68,10 +68,11 @@ export interface SupplierInvoice {
   id: string;
   provider: string;
   date: string;
-  imageUrl: string; // Base64 compressed image or PDF data uri
+  imageUrl: string; // Base64 compressed image or PDF public Storage URL
+  storagePath?: string; // Path in Firebase Storage
   fileType?: 'image' | 'pdf';
   baseAmount?: number; // Base imponible
-  totalAmount?: number; // Total factura
+  totalAmount: number; // Total factura (Mandatory)
   notes?: string;
 }
 
