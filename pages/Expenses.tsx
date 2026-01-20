@@ -359,46 +359,51 @@ const Expenses: React.FC<ExpensesProps> = ({ onBack, expenses, onAddExpense, onU
           filteredExpenses.map((expense) => {
             const clientName = clients.find(c => c.id === expense.clientId)?.name;
             return (
-              <div key={expense.id} onClick={() => setSelectedExpense(expense)} className={`bg-white rounded-r-xl rounded-l-sm border-l-[6px] ${getCategoryBorderColor(expense.category)} shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] p-5 flex items-center justify-between gap-5 cursor-pointer hover:shadow-2xl hover:scale-[1.01] transition-all duration-300 group`}>
+              <div key={expense.id} onClick={() => setSelectedExpense(expense)} className={`bg-white rounded-r-xl rounded-l-sm border-l-[6px] ${getCategoryBorderColor(expense.category)} shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] p-5 flex items-center gap-5 cursor-pointer hover:shadow-2xl hover:scale-[1.01] transition-all duration-300 group`}>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5">
+                  <div className="flex items-center gap-2 mb-1">
                     {clientName ? (
                       <span className="text-slate-800 font-bold text-lg tracking-tight truncate flex items-center gap-2"><User className="w-4 h-4 text-slate-400" />{clientName}</span>
                     ) : (
-                      <span className="text-slate-400 italic font-medium flex items-center gap-2"><User className="w-4 h-4" />Sin cliente</span>
+                      <span className="text-slate-400 italic font-medium flex items-center gap-2 text-sm"><User className="w-4 h-4" />Sin cliente</span>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mb-1.5 leading-none">
+                  <div className="flex items-center gap-2 mb-2 leading-none">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getPaymentStatusStyles(expense.paymentStatus)}`}>
                       {getPaymentStatusIcon(expense.paymentStatus)}
                       {expense.paymentStatus || 'Pendiente'}
                     </span>
+                    <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold border uppercase tracking-wider ${getCategoryColorStyles(expense.category)}`}>{expense.category}</span>
                   </div>
-                  <h3 className="text-sm text-slate-500 font-medium truncate leading-relaxed">{expense.description}</h3>
+                  <h3 className="text-xs text-slate-500 font-medium truncate leading-relaxed">{expense.description}</h3>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <span className={`inline-flex px-3 py-1 rounded-full text-[10px] font-bold border uppercase tracking-wide ${getCategoryColorStyles(expense.category)}`}>{expense.category}</span>
-                    <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium bg-slate-50 px-2 py-1 rounded-md"><Calendar className="w-3.5 h-3.5" /><span>{new Date(expense.date).toLocaleDateString()}</span></div>
+
+                <div className="shrink-0 text-right flex flex-col items-end gap-1">
+                  <div className="text-xl font-black text-slate-800 leading-none">
+                    -{expense.amount.toFixed(2)}€
                   </div>
-                  <div className="flex items-center gap-1 ml-2">
+                  <div className="flex items-center gap-1 text-[10px] text-slate-400 font-medium">
+                    <Calendar className="w-3 h-3" />
+                    <span>{new Date(expense.date).toLocaleDateString()}</span>
+                  </div>
+                  <div className="flex items-center gap-1 mt-1">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleEditClick(expense); }}
-                      className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 border border-blue-200 transition-colors"
+                      className="p-1.5 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-white rounded-lg transition-all"
                       title="Editar"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDeleteClick(expense); }}
-                      className="p-2 bg-white text-blue-600 rounded-lg hover:bg-rose-50 hover:text-rose-600 border border-blue-200 hover:border-rose-200 transition-colors"
+                      className="p-1.5 bg-slate-50 text-slate-400 hover:text-rose-600 hover:bg-white rounded-lg transition-all"
                       title="Borrar"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-slate-300 group-hover:text-indigo-400 shrink-0" />
+                <ChevronRight className="w-5 h-5 text-slate-200 group-hover:text-indigo-400 shrink-0 hidden sm:block" />
               </div>
             );
           })

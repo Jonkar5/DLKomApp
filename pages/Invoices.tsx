@@ -18,7 +18,8 @@ import {
     List,
     CheckCircle2,
     Maximize,
-    Archive
+    Archive,
+    ChevronRight
 } from 'lucide-react';
 // @ts-ignore
 import { jsPDF } from 'jspdf';
@@ -56,11 +57,43 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
     const [baseAmount, setBaseAmount] = useState<number | ''>('');
     const [totalAmount, setTotalAmount] = useState<number | ''>('');
 
-    // Report State
     const [reportStartDate, setReportStartDate] = useState('');
     const [reportEndDate, setReportEndDate] = useState('');
+    const [isAddingNewProvider, setIsAddingNewProvider] = useState(false);
+    const [newProviderName, setNewProviderName] = useState('');
+
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        console.log("Invoices component invoices count:", invoices?.length);
+        if (invoices?.length > 0) {
+            console.log("First invoice sample:", invoices[0]);
+        }
+    }, [invoices]);
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const formatDateSafe = (dateStr: string) => {
+        if (!dateStr) return "-";
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return dateStr; // return original if invalid
+            return date.toLocaleDateString();
+        } catch (e) {
+            return dateStr;
+        }
+    };
+
+    const dataUriToBlob = (dataUri: string) => {
+        const byteString = atob(dataUri.split(',')[1]);
+        const mimeString = dataUri.split(',')[0].split(':')[1].split(';')[0];
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+        }
+        return new Blob([ab], { type: mimeString });
+    };
 
     const handleBulkExport = async () => {
         const filteredForZip = invoices.filter(inv => {
@@ -187,28 +220,45 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
             return;
         }
 
+        setIsSaving(true);
+        console.log("Starting invoice save process...");
         try {
-            // In a real app, we'd upload to Firebase Storage here and use the URL
-            // Since we're demonstrating, we'll prefix with 'storage://' to mock the flow
-            // or just use the DataURI as requested if storage is not fully setup.
-            // For this task, let's assume we use the dataUri for now but structure it for storage.
+            // Safer path: remove any character that's not alphanumeric, underscore or dash
+            const safeProvider = provider.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const path = `supplier_invoices/${Date.now()}_${safeProvider}.${invoiceFileType === 'pdf' ? 'pdf' : 'jpg'}`;
+
+            console.log("Converting DataURI to Blob...");
+            const blob = dataUriToBlob(invoiceImage);
+            console.log(`Blob size: ${(blob.size / 1024).toFixed(2)} KB`);
+
+            console.log("Uploading to Storage...");
+            const { url, storagePath } = await uploadToStorage(blob, path);
+            console.log("Storage upload complete. URL:", url);
 
             const newInvoice: SupplierInvoice = {
                 id: Date.now().toString(),
                 provider,
                 date: invoiceDate,
-                imageUrl: invoiceImage,
+                imageUrl: url,
+                storagePath,
                 fileType: invoiceFileType,
                 baseAmount: baseAmount === '' ? undefined : Number(baseAmount),
                 totalAmount: Number(totalAmount)
             };
 
-            onAddInvoice(newInvoice);
+            console.log("Adding record to Firestore...");
+            // CRITICAL: Must await the database operation
+            await onAddInvoice(newInvoice);
+            console.log("Firestore record added successfully.");
+
             resetForm();
             setIsAddModalOpen(false);
+            console.log("Invoice save process finished successfully.");
         } catch (error) {
-            console.error("Error saving invoice:", error);
-            alert("Error al guardar la factura.");
+            console.error("CRITICAL ERROR saving invoice:", error);
+            alert("Error al guardar la factura. Verifica tu diseño o conexión.");
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -218,6 +268,7 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
         setInvoiceImage(null);
         setBaseAmount('');
         setTotalAmount('');
+        setIsAddingNewProvider(false);
     };
 
     const handleDeleteClick = (invoice: SupplierInvoice) => {
@@ -244,14 +295,35 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
 
     const uniqueProviders = Array.from(new Set(invoices.map(inv => inv.provider))).sort();
 
-    const filteredInvoices = invoices.filter(inv => {
+    const filteredInvoices = (invoices || []).filter(inv => {
         const matchesSearch = inv.provider.toLowerCase().includes(searchTerm.toLowerCase());
         const matchesDate = filterDate === '' || inv.date === filterDate;
         return matchesSearch && matchesDate;
-    }).sort((a, b) => new Date(b.date).getTime() - (new Date(a.date).getTime() || 0));
+    }).sort((a, b) => {
+        const dateA = a.date ? new Date(a.date).getTime() : 0;
+        const dateB = b.date ? new Date(b.date).getTime() : 0;
+        // Handle invalid dates by treating them as 0
+        const valA = isNaN(dateA) ? 0 : dateA;
+        const valB = isNaN(dateB) ? 0 : dateB;
+        return valB - valA || b.id.localeCompare(a.id);
+    });
 
     return (
         <div className="space-y-6 animate-fade-in pb-20 relative">
+            {/* Debug Info - Visible helps verify if data is loading */}
+            <div className="bg-indigo-50 border border-indigo-100 p-2 rounded-xl text-[10px] text-indigo-400 font-mono flex flex-col gap-1">
+                <div className="flex justify-between">
+                    <span>Colección (Firestore): supplier_invoices</span>
+                    <span className="font-bold">Total: {invoices?.length || 0} | Filtrados: {filteredInvoices.length}</span>
+                </div>
+                {(searchTerm || filterDate) && (
+                    <div className="flex gap-2 opacity-70">
+                        <span>Filtros:</span>
+                        {searchTerm && <span>Busca: "{searchTerm}"</span>}
+                        {filterDate && <span>Fecha: {filterDate}</span>}
+                    </div>
+                )}
+            </div>
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-5">
@@ -286,15 +358,18 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
             {/* Filters */}
             <div className="flex flex-col md:flex-row gap-4 bg-white p-4 rounded-3xl border border-slate-100 shadow-sm">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                    <input
-                        type="text"
-                        placeholder="Buscar proveedor..."
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"><Search className="w-5 h-5 text-slate-400" /></div>
+                    <select
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-100 outline-none"
-                        list="providers-list"
-                    />
+                        className="w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none cursor-pointer truncate"
+                    >
+                        <option value="">Todos los proveedores</option>
+                        {uniqueProviders.map(p => (
+                            <option key={p} value={p}>{p}</option>
+                        ))}
+                    </select>
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronRight className="w-4 h-4 text-slate-400 rotate-90" /></div>
                 </div>
                 <div className="relative md:w-56">
                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 pointer-events-none" />
@@ -335,7 +410,7 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                                 <div className="flex justify-between items-start">
                                     <div className="min-w-0 flex-1">
                                         <h3 className="text-sm font-bold text-slate-800 truncate">{invoice.provider}</h3>
-                                        <p className="text-[10px] text-slate-500 font-medium">{new Date(invoice.date).toLocaleDateString()}</p>
+                                        <p className="text-[10px] text-slate-500 font-medium">{formatDateSafe(invoice.date)}</p>
                                     </div>
                                     <p className="text-sm font-black text-indigo-600 ml-2">{invoice.totalAmount?.toFixed(2)}€</p>
                                 </div>
@@ -360,38 +435,59 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                     ))}
                 </div>
             ) : (
-                <div className="bg-white rounded-3xl overflow-hidden border border-slate-100">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50 border-b border-slate-100">
-                            <tr>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Factura</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Proveedor</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Fecha</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Importe</th>
-                                <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {filteredInvoices.map(invoice => (
-                                <tr key={invoice.id} className="hover:bg-slate-50/50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden cursor-pointer" onClick={() => setSelectedImage(invoice.imageUrl)}>
-                                            {invoice.fileType === 'pdf' ? <FileText className="w-full h-full p-2 text-rose-400" /> : <img src={invoice.imageUrl} className="w-full h-full object-cover" />}
+                <div className="space-y-4">
+                    {/* Header for desktop */}
+                    <div className="hidden md:flex items-center px-6 py-4 bg-slate-50 border border-slate-100 rounded-2xl mb-2">
+                        <div className="w-10 mr-4 text-xs font-bold text-slate-400 uppercase">Factura</div>
+                        <div className="flex-1 text-xs font-bold text-slate-400 uppercase">Proveedor</div>
+                        <div className="w-32 text-xs font-bold text-slate-400 uppercase">Fecha</div>
+                        <div className="w-32 text-xs font-bold text-slate-400 uppercase text-right">Importe</div>
+                        <div className="w-24 text-xs font-bold text-slate-400 uppercase text-right">Acciones</div>
+                    </div>
+
+                    <div className="space-y-3">
+                        {filteredInvoices.map(invoice => (
+                            <div key={invoice.id} className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm hover:shadow-md transition-all flex items-center gap-4 group">
+                                {/* Thumbnail */}
+                                <div className="w-12 h-12 md:w-10 md:h-10 rounded-xl bg-slate-100 overflow-hidden cursor-pointer shrink-0" onClick={() => setSelectedImage(invoice.imageUrl)}>
+                                    {invoice.fileType === 'pdf' ? (
+                                        <FileText className="w-full h-full p-2.5 text-rose-400" />
+                                    ) : (
+                                        <img src={invoice.imageUrl} className="w-full h-full object-cover" alt="Thumb" />
+                                    )}
+                                </div>
+
+                                {/* Body */}
+                                <div className="flex-1 min-w-0 flex items-center justify-between gap-4">
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="font-bold text-slate-800 truncate leading-tight">{invoice.provider}</h4>
+                                        <p className="text-xs text-slate-400">{formatDateSafe(invoice.date)}</p>
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                        <p className="text-lg font-black text-indigo-600 leading-none mb-1">
+                                            {invoice.totalAmount?.toFixed(2)}€
+                                        </p>
+                                        <div className="flex items-center gap-1 justify-end">
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleTransferToOneDrive(invoice); }}
+                                                className="p-2 text-slate-400 hover:text-indigo-600 transition-all"
+                                                title="OneDrive"
+                                            >
+                                                <Share2 className="w-4 h-4" />
+                                            </button>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteClick(invoice); }}
+                                                className="p-2 text-slate-400 hover:text-rose-600 transition-all"
+                                                title="Borrar"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
                                         </div>
-                                    </td>
-                                    <td className="px-6 py-4 font-bold text-slate-700">{invoice.provider}</td>
-                                    <td className="px-6 py-4 text-slate-500">{new Date(invoice.date).toLocaleDateString()}</td>
-                                    <td className="px-6 py-4 text-right font-black text-indigo-600">{invoice.totalAmount?.toFixed(2)}€</td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex justify-end gap-2">
-                                            <button onClick={() => handleTransferToOneDrive(invoice)} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"><Share2 className="w-4 h-4" /></button>
-                                            <button onClick={() => handleDeleteClick(invoice)} className="p-2 text-slate-400 hover:text-rose-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
@@ -402,6 +498,11 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                         <FileText className="w-10 h-10 text-slate-200" />
                     </div>
                     <p className="text-slate-400 font-medium">No se encontraron facturas</p>
+                    {invoices?.length > 0 && (
+                        <p className="text-xs text-slate-400 mt-2">
+                            (Hay {invoices.length} facturas totales, pero no coinciden con los filtros)
+                        </p>
+                    )}
                 </div>
             )}
 
@@ -444,14 +545,41 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                                 </div>
                                 <div>
                                     <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Proveedor *</label>
-                                    <input
-                                        required
-                                        value={provider}
-                                        onChange={(e) => setProvider(e.target.value)}
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none"
-                                        placeholder="Nombre del proveedor"
-                                        list="providers-list"
-                                    />
+                                    <div className="space-y-2">
+                                        <select
+                                            required
+                                            value={isAddingNewProvider ? "NEW" : provider}
+                                            onChange={(e) => {
+                                                if (e.target.value === "NEW") {
+                                                    setIsAddingNewProvider(true);
+                                                    setProvider('');
+                                                } else {
+                                                    setIsAddingNewProvider(false);
+                                                    setProvider(e.target.value);
+                                                }
+                                            }}
+                                            className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-100 outline-none appearance-none"
+                                        >
+                                            <option value="">Selecciona proveedor...</option>
+                                            {uniqueProviders.map(p => (
+                                                <option key={p} value={p}>{p}</option>
+                                            ))}
+                                            <option value="NEW" className="font-bold text-indigo-600">+ Añadir nuevo proveedor...</option>
+                                        </select>
+
+                                        {isAddingNewProvider && (
+                                            <div className="animate-in slide-in-from-top-2 duration-300">
+                                                <input
+                                                    autoFocus
+                                                    required
+                                                    value={provider}
+                                                    onChange={(e) => setProvider(e.target.value)}
+                                                    className="w-full px-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                                                    placeholder="Escribe el nombre del nuevo proveedor"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -467,8 +595,21 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                                     </div>
                                 </div>
                             </div>
-                            <button type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 transition-all mt-4 flex items-center justify-center gap-2">
-                                <CheckCircle2 className="w-5 h-5" /> Guardar Factura
+                            <button
+                                type="submit"
+                                disabled={isSaving}
+                                className={`w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold shadow-lg shadow-indigo-100 transition-all mt-4 flex items-center justify-center gap-2 ${isSaving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                            >
+                                {isSaving ? (
+                                    <>
+                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        Guardando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle2 className="w-5 h-5" /> Guardar Factura
+                                    </>
+                                )}
                             </button>
                         </form>
                     </div>
@@ -525,14 +666,16 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                         <div className="space-y-4 mb-8">
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Proveedor (Filtro rápido)</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nombre del proveedor..."
+                                <select
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100"
-                                    list="providers-list"
-                                />
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-indigo-100 appearance-none"
+                                >
+                                    <option value="">Todos los proveedores</option>
+                                    {uniqueProviders.map(p => (
+                                        <option key={p} value={p}>{p}</option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
                                 <label className="block text-xs font-bold text-slate-400 uppercase mb-2">Desde</label>
@@ -568,12 +711,6 @@ const Invoices: React.FC<InvoicesProps> = ({ onBack, invoices, onAddInvoice, onU
                     )}
                 </div>
             )}
-            {/* Provider Datalist for shared use */}
-            <datalist id="providers-list">
-                {uniqueProviders.map(p => (
-                    <option key={p} value={p} />
-                ))}
-            </datalist>
         </div>
     );
 };

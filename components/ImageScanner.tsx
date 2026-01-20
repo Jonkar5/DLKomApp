@@ -23,6 +23,8 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
     ]);
     const [filter, setFilter] = useState<'none' | 'bw' | 'grayscale' | 'magic'>('none');
     const [rotation, setRotation] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [cropArea, setCropArea] = useState({ top: 10, left: 10, right: 10, bottom: 10 });
 
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -63,41 +65,71 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
         if (videoRef.current && canvasRef.current) {
             const video = videoRef.current;
             const canvas = canvasRef.current;
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
+
+            // Camera full resolution
+            const vWidth = video.videoWidth;
+            const vHeight = video.videoHeight;
+
+            // The guide in UI is roughly 3/4 aspect ratio in the center
+            // We'll capture the central 80% of the horizontal/vertical center for simplicity
+            // or more precisely: calculate the 3:4 rectangle centered.
+
+            let cropWidth, cropHeight, startX, startY;
+
+            if (vWidth / vHeight > 3 / 4) {
+                // Video is wider than 3:4
+                cropHeight = vHeight * 0.8;
+                cropWidth = cropHeight * (3 / 4);
+            } else {
+                // Video is narrower than 3:4
+                cropWidth = vWidth * 0.8;
+                cropHeight = cropWidth * (4 / 3);
+            }
+
+            startX = (vWidth - cropWidth) / 2;
+            startY = (vHeight - cropHeight) / 2;
+
+            canvas.width = cropWidth;
+            canvas.height = cropHeight;
+
             const ctx = canvas.getContext('2d');
-            ctx?.drawImage(video, 0, 0);
+            ctx?.drawImage(video, startX, startY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
             const dataUri = canvas.toDataURL('image/jpeg', 0.9);
             setCurrentImage(dataUri);
+            setRotation(0);
+            setFilter('none');
             setStep('edit');
-            // Reset points to detected or default
-            setPoints([
-                { x: 10, y: 10 }, { x: 90, y: 10 },
-                { x: 90, y: 90 }, { x: 10, y: 90 }
-            ]);
         }
     };
 
     // --- Processing Logic ---
     const applyPerspective = () => {
-        if (!currentImage || !editCanvasRef.current) return;
+        if (!currentImage || isProcessing) return;
 
+        setIsProcessing(true);
         const img = new Image();
         img.onload = () => {
-            const canvas = editCanvasRef.current!;
-            const ctx = canvas.getContext('2d')!;
-
-            // Simple approach for demo: we'll just crop for now 
-            // Real perspective warp requires a complex transform matrix
-            // For now, let's implement the "Finalize" flow
-            const processedUri = processImage(img);
-            setPages([...pages, processedUri]);
-            setStep('preview');
+            try {
+                const processedUri = processImage(img);
+                setPages(prev => [...prev, processedUri]);
+                setStep('preview');
+                setCurrentImage(null);
+            } catch (err) {
+                console.error("Error processing image:", err);
+                alert("Error al procesar la imagen.");
+            } finally {
+                setIsProcessing(false);
+            }
+        };
+        img.onerror = () => {
+            setIsProcessing(false);
+            alert("Error al cargar la imagen para procesar.");
         };
         img.src = currentImage;
     };
 
-    const processImage = (img: HTMLImageElement) => {
+    const processImage = (img: HTMLImageElement): string => {
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d')!;
 
@@ -107,6 +139,7 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
             canvas.height = img.height;
         } else {
             canvas.width = img.height;
+            canvas.width = img.height;
             canvas.height = img.width;
         }
 
@@ -114,11 +147,11 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
         ctx.rotate((rotation * Math.PI) / 180);
         ctx.drawImage(img, -img.width / 2, -img.height / 2);
 
-        // Apply Filters
+        // Apply Filters (Canvas implementation matching CSS filters)
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const data = imageData.data;
 
-        if (filter === 'grayscale' || filter === 'bw' || filter === 'magic') {
+        if (filter !== 'none') {
             for (let i = 0; i < data.length; i += 4) {
                 const r = data[i];
                 const g = data[i + 1];
@@ -126,18 +159,20 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
                 let gray = 0.299 * r + 0.587 * g + 0.114 * b;
 
                 if (filter === 'bw') {
-                    gray = gray > 128 ? 255 : 0;
+                    gray = gray > 120 ? 255 : 0;
+                    data[i] = data[i + 1] = data[i + 2] = gray;
                 } else if (filter === 'magic') {
-                    // Contrast enhancement
-                    gray = (gray - 128) * 1.5 + 128;
-                    gray = Math.max(0, Math.min(255, gray));
+                    // High contrast + brightness
+                    data[i] = Math.min(255, (r - 128) * 1.5 + 128 + 20);
+                    data[i + 1] = Math.min(255, (g - 128) * 1.5 + 128 + 20);
+                    data[i + 2] = Math.min(255, (b - 128) * 1.5 + 128 + 20);
+                } else if (filter === 'grayscale') {
+                    data[i] = data[i + 1] = data[i + 2] = gray;
                 }
-
-                data[i] = data[i + 1] = data[i + 2] = gray;
             }
+            ctx.putImageData(imageData, 0, 0);
         }
 
-        ctx.putImageData(imageData, 0, 0);
         return canvas.toDataURL('image/jpeg', 0.8);
     };
 
@@ -187,13 +222,24 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
                 {step === 'edit' && currentImage && (
                     <div className="w-full h-full flex flex-col">
                         <div className="flex-1 relative p-4 flex items-center justify-center">
-                            <img src={currentImage} className="max-w-full max-h-full object-contain rounded-lg" style={{ transform: `rotate(${rotation}deg)` }} />
-                            {/* Perspective Grid placeholder */}
-                            <div className="absolute inset-4 border-2 border-indigo-500/50 pointer-events-none">
-                                <Crop className="absolute -top-3 -left-3 w-6 h-6 text-indigo-500 fill-white" />
-                                <Crop className="absolute -top-3 -right-3 w-6 h-6 text-indigo-500 fill-white rotate-90" />
-                                <Crop className="absolute -bottom-3 -right-3 w-6 h-6 text-indigo-500 fill-white rotate-180" />
-                                <Crop className="absolute -bottom-3 -left-3 w-6 h-6 text-indigo-500 fill-white -rotate-90" />
+                            <div className="relative max-w-full max-h-full">
+                                <img
+                                    src={currentImage}
+                                    className="max-w-full max-h-full object-contain rounded-lg transition-all duration-300"
+                                    style={{
+                                        transform: `rotate(${rotation}deg)`,
+                                        filter: filter === 'bw' ? 'grayscale(1) contrast(500%)' :
+                                            filter === 'grayscale' ? 'grayscale(1)' :
+                                                filter === 'magic' ? 'contrast(1.5) brightness(1.2)' : 'none'
+                                    }}
+                                />
+                                {/* Perspective Grid placeholder */}
+                                <div className="absolute inset-0 border-2 border-indigo-500/50 pointer-events-none">
+                                    <Crop className="absolute -top-3 -left-3 w-6 h-6 text-indigo-500 fill-white" />
+                                    <Crop className="absolute -top-3 -right-3 w-6 h-6 text-indigo-500 fill-white rotate-90" />
+                                    <Crop className="absolute -bottom-3 -right-3 w-6 h-6 text-indigo-500 fill-white rotate-180" />
+                                    <Crop className="absolute -bottom-3 -left-3 w-6 h-6 text-indigo-500 fill-white -rotate-90" />
+                                </div>
                             </div>
                         </div>
 
@@ -205,7 +251,7 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
                             </button>
                             <button onClick={() => setFilter(f => f === 'bw' ? 'none' : 'bw')} className={`flex flex-col items-center gap-1 ${filter === 'bw' ? 'text-indigo-400' : 'text-slate-400'}`}>
                                 <Layers className="w-5 h-5" />
-                                <span className="text-[10px]">B/N</span>
+                                <span className="text-[10px]">Blanco/N</span>
                             </button>
                             <button onClick={() => setFilter(f => f === 'magic' ? 'none' : 'magic')} className={`flex flex-col items-center gap-1 ${filter === 'magic' ? 'text-indigo-400' : 'text-slate-400'}`}>
                                 <Maximize className="w-5 h-5" />
@@ -218,8 +264,22 @@ const ImageScanner: React.FC<ImageScannerProps> = ({ onSave, onClose }) => {
                         </div>
 
                         <div className="flex gap-4 p-4 bg-slate-950 border-t border-slate-800">
-                            <button onClick={() => setStep('capture')} className="flex-1 py-3 bg-slate-800 text-white rounded-xl font-bold">Repetir</button>
-                            <button onClick={applyPerspective} className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">Confirmar</button>
+                            <button onClick={() => setStep('capture')} className="flex-1 py-3 bg-slate-800 text-white rounded-xl font-bold">Atrás</button>
+                            <button
+                                onClick={applyPerspective}
+                                disabled={isProcessing}
+                                className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2"
+                            >
+                                {isProcessing ? (
+                                    <>
+                                        <RotateCw className="w-4 h-4 animate-spin" /> Procesando...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Check className="w-4 h-4" /> Confirmar
+                                    </>
+                                )}
+                            </button>
                         </div>
                     </div>
                 )}
